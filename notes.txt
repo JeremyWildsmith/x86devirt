@@ -1,0 +1,22 @@
+004131AD - Enters Virtual Machine at this address
+
+0012FBC8  004016F5  vm_test_vmed_01.004016F5
+0012FBCC  00412D5C  vm_test_vmed_01.00412D5C
+
+
+
+VM Stub starts at 004112FC
+ - First argument is where routine used to be in the user .text code section
+ - Second argument is where the encrypted bytecode to replace the functionality is
+On the stack
+First Arg
+Second Arg
+Return Address
+Parameters to the function call
+EDX Appears to be setup as the current instruction pointer of the VM
+
+
+ECX Is relative Instruction pointer
+
+Appears to make a call, pushes VM IP, Instr Lenght - 1, Buffer
+00411338 | E8 D8050000              | call vm_test_vmed_01.411915             |
