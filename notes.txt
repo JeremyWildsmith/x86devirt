@@ -20,3 +20,43 @@ ECX Is relative Instruction pointer
 
 Appears to make a call, pushes VM IP, Instr Lenght - 1, Buffer
 00411338 | E8 D8050000              | call vm_test_vmed_01.411915             |
+
+Instruction Structure
+[Instruction Length (xored with next byte)][Remaining of instruciton]
+
+Inside an instruction handler:
+[ESP+30] resolves to pointer of registers in the following order
+EFLAGS
+EDI
+ESI
+EBP
+ESP
+EBX
+EDX
+ECX
+EAX
+
+EAX, ECX, EDX, EBX, original ESP, EBP, ESI, and EDI
+==========================
+OPCODE 86, Handler at 0041160E
+OC OPERAND1REG[BYTE]
+
+if(OPERAND1REG == ESP)
+    VMR = OPERAND1REG + 8;
+else
+    VMR = OPERAND1REG
+
+==========================
+OPCODE B0, Handler at 00411632
+OC OPERAND1_CONSTANT_BYTE
+
+VMR += OPERAND1_CONSTANT[BYTE]
+
+
+==========================
+OPCODE 4, Handler at 004118D8
+OC x86Instruction[byte], Register[byte]
+
+[VMR] = 
+
+
