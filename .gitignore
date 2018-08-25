@@ -1,4 +1,4 @@
 *.o
 *.out
-x86virt-disassembler
+x86virt-disasm
 
