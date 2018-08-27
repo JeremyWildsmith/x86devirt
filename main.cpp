@@ -161,7 +161,7 @@ char* disassembleVmOpcode(char* textBuffer, const uint8_t* instrBuffer, uint32_t
         }
         case 0x86:
         {
-            strcpy(textBuffer, "ldr ");
+            strcpy(textBuffer, "mov VMR, ");
             DecodedRegister_t operandA = decodeVmRegisterReference(instrBuffer[1]);
             concatRegister(textBuffer, operandA);
             
