@@ -6,7 +6,7 @@
 
 #define MAX_INSTRUCTION_LENGTH 100
 
-typedef __attribute__((stdcall)) void (*DecryptInstruciton_t)(void* pInstrBufferOffset1, unsigned int instrLengthMinusOne, unsigned int relativeOffset);
+typedef __attribute__((stdcall)) void (*DecryptInstruciton_t)(void* pInstrBufferOffset1, uint32_t instrLengthMinusOne, uint32_t relativeOffset);
 
 enum DecodedRegister_t {
     EFLAGS = 0,
@@ -25,11 +25,11 @@ DecryptInstruciton_t fn_decryptInstruction = (DecryptInstruciton_t)(&decryptInst
 
 ud_t ud_obj;
 
-unsigned int getInstructionLength(unsigned char* pInstructionBuffer) {
+uint32_t getInstructionLength(uint8_t* pInstructionBuffer) {
     return pInstructionBuffer[0] ^ pInstructionBuffer[1];
 }
 
-bool disassemble86Instruction(char* buffer, const unsigned char* instrBuffer, unsigned int instrLength) {
+bool disassemble86Instruction(char* buffer, const uint8_t* instrBuffer, uint32_t instrLength) {
 
     ud_set_input_buffer(&ud_obj, instrBuffer, instrLength);
     ud_disassemble(&ud_obj);
@@ -58,7 +58,7 @@ void concatRegister(char* textBuffer, DecodedRegister_t reg) {
         strcat(textBuffer, registerIndex[reg]);    
 }
 
-DecodedRegister_t decodeVmRegisterReference(const unsigned char registerEncoded) {
+DecodedRegister_t decodeVmRegisterReference(const uint8_t registerEncoded) {
     unsigned long reference = 0x5;
     reference = reference << 2;
     reference -= 0x20;
@@ -72,22 +72,22 @@ DecodedRegister_t decodeVmRegisterReference(const unsigned char registerEncoded)
     return (DecodedRegister_t)reference;
 }
 
-char* disassembleVmOpcode(char* textBuffer, const unsigned char* instrBuffer, unsigned int instrLength) {
+char* disassembleVmOpcode(char* textBuffer, const uint8_t* instrBuffer, uint32_t instrLength) {
     switch(instrBuffer[0]) {
         case 0x4:
         {
             /*
              * Here we need to decode the VM instruction into a valid x86 instruction
              */
-            unsigned int x86InstructionLength = instrLength + 3;
+            uint32_t x86InstructionLength = instrLength + 3;
 
-            unsigned char x86Buffer[x86InstructionLength];
+            uint8_t x86Buffer[x86InstructionLength];
             memcpy(x86Buffer, instrBuffer, instrLength);
 
             //89 05 04 89
-            unsigned short operandsBuffer = *((unsigned short*)(&x86Buffer[1]));
-            unsigned char* low = (unsigned char*)&operandsBuffer;
-            unsigned char* high = ((unsigned char*)&operandsBuffer) + 1;
+            uint16_t operandsBuffer = *((uint16_t*)(&x86Buffer[1]));
+            uint8_t* low = (uint8_t*)&operandsBuffer;
+            uint8_t* high = ((uint8_t*)&operandsBuffer) + 1;
 
             *high = *high << 3;
             *high |= 5;
@@ -98,7 +98,7 @@ char* disassembleVmOpcode(char* textBuffer, const unsigned char* instrBuffer, un
             //We use a dummy pointer here (0xFFFFFFFF.) x86virt uses a pointer containing the value of VMR
             //So we will feed 0xFFFFFFFF into the disassembler and then replace it with VMR afterwards, since
             //the disassembler has no concept of the VMR
-            unsigned long* ptr = (unsigned long*)(&x86Buffer[2]);
+            uint32_t* ptr = (uint32_t*)(&x86Buffer[2]);
             *ptr = 0xFFFFFFFF;
 
             //here we disassemble the decided x86 instruction into the buffer
@@ -126,8 +126,39 @@ char* disassembleVmOpcode(char* textBuffer, const unsigned char* instrBuffer, un
             strcpy(textBuffer, "OPB ");
             break;
         case 0x73:
-            strcpy(textBuffer, "OPC ");
+        {/*
+            OPCODE 0x73 Handler at 004118B0
+
+            OC OP1[byte] OP2[byte] OP3[Data...]
+            OP3 is OP2 bytes in Length
+
+            1. Copy OP2 Bytes from OP3  over start of instruction
+            2. Add module base address (0x400000) to instructionat OP1 bytes in
+            3. copy 0x68 into instruction at offset OP2
+
+            */
+            /*
+             * Here we need to decode the VM instruction into a valid x86 instruction
+             */
+            uint32_t x86InstructionLength = instrLength + 2;
+
+            uint8_t x86Buffer[x86InstructionLength];
+            memcpy(x86Buffer, instrBuffer, instrLength);
+
+            //Get operands needed for calculation
+            const uint8_t op1 = x86Buffer[1];
+            const uint8_t op2 = x86Buffer[2];
+
+            uint8_t upperBuffer[op2];
+            memcpy(upperBuffer, &x86Buffer[3], op2);
+            memcpy(x86Buffer, upperBuffer, op2);
+            *((unsigned long*)(&x86Buffer[op1])) += 0x400000;
+            
+            ud_set_input_buffer(&ud_obj, x86Buffer, x86InstructionLength);
+            ud_disassemble(&ud_obj);
+            strcpy(textBuffer, ud_insn_asm(&ud_obj));
             break;
+        }
         case 0x86:
         {
             strcpy(textBuffer, "ldr ");
@@ -142,17 +173,19 @@ char* disassembleVmOpcode(char* textBuffer, const unsigned char* instrBuffer, un
         case 0xB0:
         {
             strcpy(textBuffer, "add ");
-            unsigned int operand1 = *((unsigned int*)(&instrBuffer[1]));
-            sprintf(textBuffer + strlen(textBuffer), "%X", operand1);
+            uint32_t operand1 = *((uint32_t*)(&instrBuffer[1]));
+            sprintf(textBuffer + strlen(textBuffer), "0x%X", operand1);
             break;
         }
         case 0xD:
             strcpy(textBuffer, "OPG ");
             break;
         case 0xE3:
-            strcpy(textBuffer, "OPH ");
+        {
+            const uint32_t operand = *((uint32_t*)(&instrBuffer[1]));
+            sprintf(textBuffer, "cmp [VMR], 0x%X", operand);
             break;
-
+        }
         default:
             return 0;
     }
@@ -160,15 +193,15 @@ char* disassembleVmOpcode(char* textBuffer, const unsigned char* instrBuffer, un
     return textBuffer;
 }
 
-bool disassembleVmInstruction(char* textBuffer, const unsigned char* instrBuffer, unsigned int instrLength) {
+bool disassembleVmInstruction(char* textBuffer, const uint8_t* instrBuffer, uint32_t instrLength) {
     char* disassembled = disassembleVmOpcode(textBuffer, instrBuffer + 2, instrLength - 2);
     
     return disassembled != 0;
 }
 
-unsigned int executeInstruction(unsigned char* vmMemory, unsigned int vmRelativeIp) {
-    unsigned int instrLength = getInstructionLength(vmMemory + vmRelativeIp);
-    unsigned char instrBuffer[MAX_INSTRUCTION_LENGTH];
+uint32_t executeInstruction(uint8_t* vmMemory, uint32_t vmRelativeIp) {
+    uint32_t instrLength = getInstructionLength(vmMemory + vmRelativeIp);
+    uint8_t instrBuffer[MAX_INSTRUCTION_LENGTH];
 
     if(instrLength > sizeof(instrBuffer)) {
         printf("Unexpected instruction length.");
@@ -199,13 +232,13 @@ unsigned int executeInstruction(unsigned char* vmMemory, unsigned int vmRelative
     return instrLength + 1;
 }
 
-unsigned char* readVmMemory() {
+uint8_t* readVmMemory() {
     FILE *f = fopen("virtualized_00412D5C.bin", "rb");
     fseek(f, 0, SEEK_END);
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    unsigned char* vmMemory = (unsigned char*)malloc(fsize + 1);
+    uint8_t* vmMemory = (uint8_t*)malloc(fsize + 1);
     fread(vmMemory, fsize, 1, f);
     fclose(f);
 
@@ -213,15 +246,18 @@ unsigned char* readVmMemory() {
 }
 
 int main() {
+    printf("X86devirt Disassembler, by Jeremy Wildsmith\n");
+    printf("Assumes image base is at 0x400000\n");
+
     ud_init(&ud_obj);
     ud_set_mode(&ud_obj, 32);
     ud_set_syntax(&ud_obj, UD_SYN_INTEL);
 
-    unsigned char* vmMemory = readVmMemory();
+    uint8_t* vmMemory = readVmMemory();
 
     unsigned int vmRelativeIp = 0;
 
-    for(int i = 0; i < 10; i++) {
+    for(int i = 0; i < 20; i++) {
         vmRelativeIp += executeInstruction(vmMemory, vmRelativeIp);
     }
 

@@ -55,8 +55,23 @@ VMR += OPERAND1_CONSTANT[BYTE]
 
 ==========================
 OPCODE 4, Handler at 004118D8
-OC x86Instruction[byte], Register[byte]
+X86 instruction with VMR
 
-[VMR] = 
+==========================
+OPCODE 0x73 Handler at 004118B0
+
+OC OP1[byte] OP2[byte] OP3[Data...]
+OP3 is OP2 bytes in Length
+
+1. Copy OP2 Bytes from OP3  over start of instruction
+2. Add module base address (0x400000) to instructionat OP1 bytes in
+3. copy 0x68 into instruction at offset OP2
+
+
+==========================
+OPCODE 0xE3 Handler at 00411803
+OPC DWORD PTR
+CMP [VMR], OPC
+
 
 
