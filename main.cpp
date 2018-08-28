@@ -125,7 +125,7 @@ DecodedRegister_t decodeVmRegisterReference(const uint8_t registerEncoded) {
     return (DecodedRegister_t)reference;
 }
 
-bool disassembleVmInstruction(char* textBuffer, const uint8_t* instrBuffer, uint32_t instrLength, uint32_t vmRelativeIp, const uint32_t baseAddress) {
+bool disassembleVmInstruction(char* textBuffer, const uint8_t* instrBuffer, uint32_t instrLength, uint32_t vmRelativeIp, const uint32_t baseAddress, const uint32_t dumpBase) {
     switch(instrBuffer[0]) {
         case 0x4:
         {
@@ -241,7 +241,7 @@ bool disassembleVmInstruction(char* textBuffer, const uint8_t* instrBuffer, uint
             uint8_t operand1 = instrBuffer[1];
             uint32_t operand2 = *((uint32_t*)(&instrBuffer[2]));
 
-            sprintf(textBuffer, "%s 0x%08X", getJumpName(decodeVmJump(operand1)), vmRelativeIp + operand2);
+            sprintf(textBuffer, "%s 0x%08X", getJumpName(decodeVmJump(operand1)), vmRelativeIp + operand2 + dumpBase);
             break;
         }
         case 0xE3:
@@ -257,7 +257,7 @@ bool disassembleVmInstruction(char* textBuffer, const uint8_t* instrBuffer, uint
     return true;
 }
 
-uint32_t formatInstructionInfo(uint8_t* vmMemory, const long vmMemorySize, uint32_t vmRelativeIp, const uint32_t baseAddress) {
+uint32_t formatInstructionInfo(uint8_t* vmMemory, const long vmMemorySize, uint32_t vmRelativeIp, const uint32_t baseAddress, const uint32_t dumpBase) {
     uint32_t instrLength = getInstructionLength(vmMemory + vmRelativeIp);
     uint8_t instrBuffer[MAX_INSTRUCTION_LENGTH];
 
@@ -275,11 +275,11 @@ uint32_t formatInstructionInfo(uint8_t* vmMemory, const long vmMemorySize, uint3
     char disassembledBuffer[100];
     if(*(unsigned short*)instrBuffer == 0xFFFF) {
         //Offset by 2 which removes the 0xFFFF part of the instruction.
-        bool success = disassembleVmInstruction(disassembledBuffer, instrBuffer + 2, instrLength - 2, vmRelativeIp, baseAddress);
-        printf("\e[38;5;82m%08X - %-30s", vmRelativeIp, success ? disassembledBuffer : "Failed to disassemble");
+        bool success = disassembleVmInstruction(disassembledBuffer, instrBuffer + 2, instrLength - 2, vmRelativeIp, baseAddress, dumpBase);
+        printf("\e[38;5;82m%08X - %-30s", vmRelativeIp + dumpBase, success ? disassembledBuffer : "Failed to disassemble");
     } else {
         bool success = disassemble86Instruction(disassembledBuffer, instrBuffer, instrLength);
-        printf("%08X - %-30s", vmRelativeIp, success ? disassembledBuffer : "Failed to disassemble");
+        printf("%08X - %-30s", vmRelativeIp + dumpBase, success ? disassembledBuffer : "Failed to disassemble");
     }
 
     for(unsigned int i = 0; i < instrLength; i++) {
@@ -313,9 +313,9 @@ int main(int argc, char** args) {
 
     printf("X86devirt Disassembler, by Jeremy Wildsmith\n");
 
-    printf("Arguments: <vm code dump> <initial ip in hex> <# instructions to decode>\n");
+    printf("Arguments: <vm code dump> <dump base> <initial ip in hex> <# instructions to decode>\n");
 
-    if(argc < 4) {
+    if(argc < 5) {
         printf("Incorrect number of arguments...\n");
         return -1;
     }
@@ -332,14 +332,22 @@ int main(int argc, char** args) {
         return -1;
     }
 
-    const unsigned int numInstructionsToDecode = atoi(args[3]);
-    unsigned int vmRelativeIp = (int)strtol(args[2], NULL, 16);
+    const uint32_t dumpBase = strtol(args[2], NULL, 16);
+    const unsigned int numInstructionsToDecode = atoi(args[4]);
+    uint32_t vmRelativeIp = (uint32_t)strtol(args[3], NULL, 16);
+
+    if(vmRelativeIp < dumpBase || vmRelativeIp >= dumpBase + vmMemorySize) {
+        printf("IP is outside of bounds of Virtual Memory.");
+        return -1;
+    }
+
+    vmRelativeIp -= dumpBase;
 
     printf("Assumes image base is at 0x%08X\n\n", baseAddress);
     printf("Instructions not coloured green are decrypted x86 instructions without decoding or interpreting.\n\n");
     printf("Attempting to decode %d instructions, starting from 0x%08X\n\n", numInstructionsToDecode, vmRelativeIp);
-    for(int i = 0; i < atoi(args[3]); i++) {
-        uint32_t length = formatInstructionInfo(vmMemory, vmMemorySize, vmRelativeIp, baseAddress);
+    for(int i = 0; i < numInstructionsToDecode; i++) {
+        uint32_t length = formatInstructionInfo(vmMemory, vmMemorySize, vmRelativeIp, baseAddress, dumpBase);
 
         if(length == 0) {
             printf("Decoding stopped due to invalid opcodes or end of VM Memory...\n");
