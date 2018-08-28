@@ -276,7 +276,7 @@ uint32_t formatInstructionInfo(uint8_t* vmMemory, const long vmMemorySize, uint3
     if(*(unsigned short*)instrBuffer == 0xFFFF) {
         //Offset by 2 which removes the 0xFFFF part of the instruction.
         bool success = disassembleVmInstruction(disassembledBuffer, instrBuffer + 2, instrLength - 2, vmRelativeIp, baseAddress);
-        printf("\e[1;31m%08X - %-30s", vmRelativeIp, success ? disassembledBuffer : "Failed to disassemble");
+        printf("\e[38;5;82m%08X - %-30s", vmRelativeIp, success ? disassembledBuffer : "Failed to disassemble");
     } else {
         bool success = disassemble86Instruction(disassembledBuffer, instrBuffer, instrLength);
         printf("%08X - %-30s", vmRelativeIp, success ? disassembledBuffer : "Failed to disassemble");
@@ -335,9 +335,9 @@ int main(int argc, char** args) {
     const unsigned int numInstructionsToDecode = atoi(args[3]);
     unsigned int vmRelativeIp = (int)strtol(args[2], NULL, 16);
 
-    printf("Assumes image base is at 0x%08X\n", baseAddress);
+    printf("Assumes image base is at 0x%08X\n\n", baseAddress);
+    printf("Instructions not coloured green are decrypted x86 instructions without decoding or interpreting.\n\n");
     printf("Attempting to decode %d instructions, starting from 0x%08X\n\n", numInstructionsToDecode, vmRelativeIp);
-
     for(int i = 0; i < atoi(args[3]); i++) {
         uint32_t length = formatInstructionInfo(vmMemory, vmMemorySize, vmRelativeIp, baseAddress);
 
