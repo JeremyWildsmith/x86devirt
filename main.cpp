@@ -49,9 +49,10 @@ uint32_t getInstructionLength(uint8_t* pInstructionBuffer) {
     return pInstructionBuffer[0] ^ pInstructionBuffer[1];
 }
 
-bool disassemble86Instruction(char* buffer, const uint8_t* instrBuffer, uint32_t instrLength) {
+bool disassemble86Instruction(char* buffer, const uint8_t* instrBuffer, uint32_t instrLength, const uint32_t instrAddress) {
 
     ud_set_input_buffer(&ud_obj, instrBuffer, instrLength);
+    ud_set_pc(&ud_obj, instrAddress);
     ud_disassemble(&ud_obj);
     strcpy(buffer, ud_insn_asm(&ud_obj));
 
@@ -278,7 +279,7 @@ uint32_t formatInstructionInfo(uint8_t* vmMemory, const long vmMemorySize, uint3
         bool success = disassembleVmInstruction(disassembledBuffer, instrBuffer + 2, instrLength - 2, vmRelativeIp, baseAddress, dumpBase);
         printf("\e[38;5;82m%08X - %-30s", vmRelativeIp + dumpBase, success ? disassembledBuffer : "Failed to disassemble");
     } else {
-        bool success = disassemble86Instruction(disassembledBuffer, instrBuffer, instrLength);
+        bool success = disassemble86Instruction(disassembledBuffer, instrBuffer, instrLength, dumpBase + vmRelativeIp);
         printf("%08X - %-30s", vmRelativeIp + dumpBase, success ? disassembledBuffer : "Failed to disassemble");
     }
 
