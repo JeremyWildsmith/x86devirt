@@ -18,7 +18,27 @@ enum DecodedRegister_t {
     EDX,
     ECX,
     EAX,
-    UNKNOWN,
+    REG_UNKNOWN,
+}; 
+
+enum DecodedJump_t {
+    JGE = 0,
+    JL,
+    JLE,
+    JZ,
+    JO,
+    JBE,
+    JNZ,
+    JNO,
+    JS,
+    JP,
+    JB,
+    JG,
+    JA,
+    JNP,
+    JNS,
+    JNB,
+    JMP_UNKNOWN,
 };
 
 DecryptInstruciton_t fn_decryptInstruction = (DecryptInstruciton_t)(&decryptInstruction);
@@ -38,7 +58,33 @@ bool disassemble86Instruction(char* buffer, const uint8_t* instrBuffer, uint32_t
     return true;
 }
 
-void concatRegister(char* textBuffer, DecodedRegister_t reg) {
+const char* getJumpName(DecodedJump_t jmp) {
+    static const char* jmpIndex[] = {
+        "jge",
+        "jl",
+        "jle",
+        "jz",
+        "jo",
+        "jbe",
+        "jnz",
+        "jno",
+        "js",
+        "jp",
+        "jb",
+        "jg",
+        "ja",
+        "jnp",
+        "jns",
+        "jnb",
+    };
+
+    if(jmp < 0 || jmp > DecodedJump_t::JNB)
+        return "???";
+    else
+        return jmpIndex[jmp];  
+}
+
+const char* getRegisterName(DecodedRegister_t reg) {
     
     static const char* registerIndex[] = {
         "eflags",
@@ -53,9 +99,16 @@ void concatRegister(char* textBuffer, DecodedRegister_t reg) {
     };
 
     if(reg < 0 || reg > DecodedRegister_t::EAX)
-        strcat(textBuffer, "???");
+        return "???";
     else
-        strcat(textBuffer, registerIndex[reg]);    
+        return registerIndex[reg];   
+}
+
+DecodedJump_t decodeVmJump(const uint8_t jumpEncoded) {
+    if(jumpEncoded < 0 || jumpEncoded > DecodedJump_t::JNB)
+        return DecodedJump_t::JMP_UNKNOWN;
+
+    return (DecodedJump_t)jumpEncoded;
 }
 
 DecodedRegister_t decodeVmRegisterReference(const uint8_t registerEncoded) {
@@ -67,12 +120,12 @@ DecodedRegister_t decodeVmRegisterReference(const uint8_t registerEncoded) {
     reference /= 4;
 
     if(reference < 0 || reference > DecodedRegister_t::EAX)
-        return DecodedRegister_t::UNKNOWN;
+        return DecodedRegister_t::REG_UNKNOWN;
 
     return (DecodedRegister_t)reference;
 }
 
-char* disassembleVmOpcode(char* textBuffer, const uint8_t* instrBuffer, uint32_t instrLength) {
+bool disassembleVmInstruction(char* textBuffer, const uint8_t* instrBuffer, uint32_t instrLength, uint32_t vmRelativeIp, const uint32_t baseAddress) {
     switch(instrBuffer[0]) {
         case 0x4:
         {
@@ -123,8 +176,11 @@ char* disassembleVmOpcode(char* textBuffer, const uint8_t* instrBuffer, uint32_t
             break;
         }
         case 0x19:
-            strcpy(textBuffer, "OPB ");
+        {
+            uint32_t operand1 = *((uint32_t*)(&instrBuffer[1]));
+            sprintf(textBuffer, "call 0x%08X", operand1 + baseAddress);
             break;
+        }
         case 0x73:
         {/*
             OPCODE 0x73 Handler at 004118B0
@@ -163,23 +219,31 @@ char* disassembleVmOpcode(char* textBuffer, const uint8_t* instrBuffer, uint32_t
         {
             strcpy(textBuffer, "mov VMR, ");
             DecodedRegister_t operandA = decodeVmRegisterReference(instrBuffer[1]);
-            concatRegister(textBuffer, operandA);
+            strcat(textBuffer, getRegisterName(operandA));
             
             break;
         }
         case 0x91:
-            strcpy(textBuffer, "OPE ");
+        {
+            uint16_t operand1 = *((uint16_t*)(&instrBuffer[1]));
+            sprintf(textBuffer, "ret 0x%X", (uint32_t)operand1);
             break;
+        }
         case 0xB0:
         {
-            strcpy(textBuffer, "add ");
+            strcpy(textBuffer, "add VMR, ");
             uint32_t operand1 = *((uint32_t*)(&instrBuffer[1]));
             sprintf(textBuffer + strlen(textBuffer), "0x%X", operand1);
             break;
         }
         case 0xD:
-            strcpy(textBuffer, "OPG ");
+        {
+            uint8_t operand1 = instrBuffer[1];
+            uint32_t operand2 = *((uint32_t*)(&instrBuffer[2]));
+
+            sprintf(textBuffer, "%s 0x%08X", getJumpName(decodeVmJump(operand1)), vmRelativeIp + operand2);
             break;
+        }
         case 0xE3:
         {
             const uint32_t operand = *((uint32_t*)(&instrBuffer[1]));
@@ -187,26 +251,20 @@ char* disassembleVmOpcode(char* textBuffer, const uint8_t* instrBuffer, uint32_t
             break;
         }
         default:
-            return 0;
+            return false;
     }
     
-    return textBuffer;
+    return true;
 }
 
-bool disassembleVmInstruction(char* textBuffer, const uint8_t* instrBuffer, uint32_t instrLength) {
-    char* disassembled = disassembleVmOpcode(textBuffer, instrBuffer + 2, instrLength - 2);
-    
-    return disassembled != 0;
-}
-
-uint32_t executeInstruction(uint8_t* vmMemory, uint32_t vmRelativeIp) {
+uint32_t formatInstructionInfo(uint8_t* vmMemory, const long vmMemorySize, uint32_t vmRelativeIp, const uint32_t baseAddress) {
     uint32_t instrLength = getInstructionLength(vmMemory + vmRelativeIp);
     uint8_t instrBuffer[MAX_INSTRUCTION_LENGTH];
 
-    if(instrLength > sizeof(instrBuffer)) {
-        printf("Unexpected instruction length.");
+    if(instrLength > sizeof(instrBuffer))
         return 0;
-    }
+    else if(instrLength + vmRelativeIp > vmMemorySize)
+        return 0;
 
     memcpy(instrBuffer,
             vmMemory + vmRelativeIp + 1, //Need to add 1 to offset from instr length byte
@@ -216,11 +274,12 @@ uint32_t executeInstruction(uint8_t* vmMemory, uint32_t vmRelativeIp) {
     
     char disassembledBuffer[100];
     if(*(unsigned short*)instrBuffer == 0xFFFF) {
-        bool success = disassembleVmInstruction(disassembledBuffer, instrBuffer, instrLength);
-        printf("\e[1;31mV: %-30s", success ? disassembledBuffer : "Failed to disassemble");
+        //Offset by 2 which removes the 0xFFFF part of the instruction.
+        bool success = disassembleVmInstruction(disassembledBuffer, instrBuffer + 2, instrLength - 2, vmRelativeIp, baseAddress);
+        printf("\e[1;31m%08X - %-30s", vmRelativeIp, success ? disassembledBuffer : "Failed to disassemble");
     } else {
         bool success = disassemble86Instruction(disassembledBuffer, instrBuffer, instrLength);
-        printf("R: %-30s", success ? disassembledBuffer : "Failed to disassemble");
+        printf("%08X - %-30s", vmRelativeIp, success ? disassembledBuffer : "Failed to disassemble");
     }
 
     for(unsigned int i = 0; i < instrLength; i++) {
@@ -232,33 +291,62 @@ uint32_t executeInstruction(uint8_t* vmMemory, uint32_t vmRelativeIp) {
     return instrLength + 1;
 }
 
-uint8_t* readVmMemory() {
-    FILE *f = fopen("virtualized_00412D5C.bin", "rb");
+uint8_t* readVmMemory(const char* fileName, long* pSize) {
+    FILE *f = fopen(fileName, "rb");
+
+    if(!f)
+        return 0;
+
     fseek(f, 0, SEEK_END);
-    long fsize = ftell(f);
+    *pSize = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    uint8_t* vmMemory = (uint8_t*)malloc(fsize + 1);
-    fread(vmMemory, fsize, 1, f);
+    uint8_t* vmMemory = (uint8_t*)malloc(*pSize + 1);
+    fread(vmMemory, *pSize, 1, f);
     fclose(f);
 
     return vmMemory;
 }
 
-int main() {
+int main(int argc, char** args) {
+    const uint32_t baseAddress = 0x400000;
+
     printf("X86devirt Disassembler, by Jeremy Wildsmith\n");
-    printf("Assumes image base is at 0x400000\n");
+
+    printf("Arguments: <vm code dump> <initial ip in hex> <# instructions to decode>\n");
+
+    if(argc < 4) {
+        printf("Incorrect number of arguments...\n");
+        return -1;
+    }
 
     ud_init(&ud_obj);
     ud_set_mode(&ud_obj, 32);
     ud_set_syntax(&ud_obj, UD_SYN_INTEL);
 
-    uint8_t* vmMemory = readVmMemory();
+    long vmMemorySize = 0;
+    uint8_t* vmMemory = readVmMemory(args[1], &vmMemorySize);
 
-    unsigned int vmRelativeIp = 0;
+    if(!vmMemory) {
+        printf("Unable to load VM Memory...\n");
+        return -1;
+    }
 
-    for(int i = 0; i < 20; i++) {
-        vmRelativeIp += executeInstruction(vmMemory, vmRelativeIp);
+    const unsigned int numInstructionsToDecode = atoi(args[3]);
+    unsigned int vmRelativeIp = (int)strtol(args[2], NULL, 16);
+
+    printf("Assumes image base is at 0x%08X\n", baseAddress);
+    printf("Attempting to decode %d instructions, starting from 0x%08X\n\n", numInstructionsToDecode, vmRelativeIp);
+
+    for(int i = 0; i < atoi(args[3]); i++) {
+        uint32_t length = formatInstructionInfo(vmMemory, vmMemorySize, vmRelativeIp, baseAddress);
+
+        if(length == 0) {
+            printf("Decoding stopped due to invalid opcodes or end of VM Memory...\n");
+            break;
+        }
+
+        vmRelativeIp += length;
     }
 
     free(vmMemory);

@@ -74,4 +74,49 @@ OPC DWORD PTR
 CMP [VMR], OPC
 
 
+==========================
+OPCODE 0xD Handler at 004114B1
+OPC OP_JMP_TYPE[byte], RelativeOffset [dword]
+
+X = 
+
+OP1 | Value of X
+0   | JGE, JNL
+1   | JL, JNGE
+2   | JLE, JNG
+3   | JZ, JE
+4   | JO
+5   | JBE, JNA
+6   | JNZ, JNG
+7   | JNO
+8   | JS
+9   | JP, JPE
+10  | JB, JNAE, JC
+11  | JG, JNLE
+12  | JA, JNBE
+13  | JNP, JPO
+14  | JNS
+15  | JNB, JAE, JNC
+
+
+
+For 1
+R   |  SF  |  OF  |
+0   |  0   |  0   |
+1   |  0   |  1   |
+1   |  1   |  0   |
+0   |  1   |  1   |
+
+==========================
+OPCODE 0x91 Handler at 004115BD
+ret [word]
+
+==========================
+OPCODE 0x19 Handler at 004114DD
+OPC OP1[DWORD]
+
+
+
+
+
 
