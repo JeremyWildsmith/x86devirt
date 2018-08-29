@@ -134,7 +134,7 @@ DecodedJump_t decodeVmJump(const uint8_t jumpEncoded) {
 }
 
 DecodedRegister_t decodeVmRegisterReference(const uint8_t registerEncoded) {
-    unsigned long reference = 0x5;
+    unsigned long reference = registerEncoded;
     reference = reference << 2;
     reference -= 0x20;
     reference ^= 0xFFFFFFFF;
