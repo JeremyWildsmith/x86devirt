@@ -321,7 +321,7 @@ void formatInstructionInfo(const DecodedVmInstruction& decodedInstruction) {
     if(decodedInstruction.type == DecodedInstructionType_t::INSTR_UNKNOWN)
         printf("%08X - %-30s", decodedInstruction.address, "Failed to disassemble");
     else
-        printf("%08X - %-30s", decodedInstruction.type, decodedInstruction.disassembled);
+        printf("%08X - %-30s", decodedInstruction.address, decodedInstruction.disassembled);
 
     for(unsigned int i = 0; i < decodedInstruction.size; i++) {
         printf("%02X ", decodedInstruction.bytes[i] & 0xFF);
