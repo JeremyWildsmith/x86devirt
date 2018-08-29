@@ -268,7 +268,7 @@ DecodedInstructionType_t disassembleVmInstruction(char* textBuffer, const uint8_
         case 0xE3:
         {
             const uint32_t operand = *((uint32_t*)(&instrBuffer[1]));
-            sprintf(textBuffer, "cmp [%s], 0x%X", vmrSub, operand);
+            sprintf(textBuffer, "cmp dword [%s], 0x%X", vmrSub, operand);
             break;
         }
         default:
