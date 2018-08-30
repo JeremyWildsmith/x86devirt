@@ -5,6 +5,7 @@
 
 //Hehe, almost got away without the C++ Standard Library. Smh... what a disgrace.
 #include <sstream>
+#include <iomanip>
 
 #define MAX_INSTRUCTION_LENGTH 100
 #define MAX_DISASSEMBLED_SIZE 100
@@ -363,6 +364,8 @@ bool dumpBuffer(const char* fileName, const char* buffer) {
     fputs(buffer, f);
 
     fclose(f);
+
+    return true;
 }
 
 int main(int argc, char** args) {
@@ -409,11 +412,9 @@ int main(int argc, char** args) {
     printf("Assumes image base is at 0x%08X\n\n", baseAddress);
     printf("Substituting VMR with %s\n\n", vmrSub);
     printf("Instructions not coloured green are decrypted x86 instructions without decoding or interpreting.\n\n");
-    printf("Attempting to decode %d instructions, starting from 0x%08X\n\n", numInstructionsToDecode, vmRelativeIp);
+    printf("Attempting to decode %d instructions, starting from 0x%08X\n\n", numInstructionsToDecode, dumpBase + vmRelativeIp);
 
     std::stringstream disassembledBuffer;
-
-    disassembledBuffer << "org 0x" << std::hex << dumpBase << std::endl;
 
     for(int i = 0; i < numInstructionsToDecode; i++) {
         DecodedVmInstruction instr;
@@ -423,6 +424,7 @@ int main(int argc, char** args) {
         }
 
         formatInstructionInfo(instr);
+        disassembledBuffer << "0x" << std::setfill('0') << std::setw(8) << std::hex << instr.address << "|"; 
         disassembledBuffer << instr.disassembled << std::endl;
 
         if(instr.type == DecodedInstructionType_t::INSTR_RETN) {
