@@ -362,7 +362,7 @@ int main(int argc, char** args) {
 
     bool prettyPrint = true;
     if(argc >= 7) {
-        if(!strcmp(args[6], "true"))
+        if(!strcmp(args[6], "false"))
             prettyPrint = false;
     }
 
