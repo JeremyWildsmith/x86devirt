@@ -6,7 +6,9 @@ SECTION .DATA
 ; Code goes in the text section
 SECTION .TEXT
 	GLOBAL decryptInstruction 
+	GLOBAL _decryptInstruction 
 
+_decryptInstruction:
 decryptInstruction:
         push esi
         push eax
