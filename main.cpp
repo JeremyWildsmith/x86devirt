@@ -3,10 +3,6 @@
 #include <stdlib.h>
 #include <udis86.h>
 
-//Hehe, almost got away without the C++ Standard Library. Smh... what a disgrace.
-#include <sstream>
-#include <iomanip>
-
 #define MAX_INSTRUCTION_LENGTH 100
 #define MAX_DISASSEMBLED_SIZE 100
 
@@ -355,29 +351,19 @@ uint8_t* readVmMemory(const char* fileName, long* pSize) {
     return vmMemory;
 }
 
-
-bool dumpBuffer(const char* fileName, const char* buffer) {
-    FILE *f = fopen(fileName, "wb");
-
-    if(!f)
-        return false;
-    fputs(buffer, f);
-
-    fclose(f);
-
-    return true;
-}
-
 int main(int argc, char** args) {
     const uint32_t baseAddress = 0x400000;
 
-    printf("X86devirt Disassembler, by Jeremy Wildsmith\n");
-
-    printf("Arguments: <vm code dump> <dump base> <initial ip in hex> <# instructions to decode> <vmr sub> <optional output file>\n");
-
     if(argc < 5) {
+        printf("Arguments: <vm code dump> <dump base> <initial ip in hex> <# instructions to decode> <vmr sub> <prettyPrint = true>\n");
         printf("Incorrect number of arguments...\n");
         return -1;
+    }
+
+    bool prettyPrint = true;
+    if(argc >= 7) {
+        if(!strcmp(args[6], "true"))
+            prettyPrint = false;
     }
 
     ud_init(&ud_obj);
@@ -409,13 +395,14 @@ int main(int argc, char** args) {
 
     vmRelativeIp -= dumpBase;
 
-    printf("Assumes image base is at 0x%08X\n\n", baseAddress);
-    printf("Substituting VMR with %s\n\n", vmrSub);
-    printf("Instructions not coloured green are decrypted x86 instructions without decoding or interpreting.\n\n");
-    printf("Attempting to decode %d instructions, starting from 0x%08X\n\n", numInstructionsToDecode, dumpBase + vmRelativeIp);
-
-    std::stringstream disassembledBuffer;
-
+    if(prettyPrint) {
+        printf("X86devirt Disassembler, by Jeremy Wildsmith\n");
+        printf("Assumes image base is at 0x%08X\n\n", baseAddress);
+        printf("Substituting VMR with %s\n\n", vmrSub);
+        printf("Instructions not coloured green are decrypted x86 instructions without decoding or interpreting.\n\n");
+        printf("Attempting to decode %d instructions, starting from 0x%08X\n\n", numInstructionsToDecode, dumpBase + vmRelativeIp);
+    }
+    
     for(int i = 0; i < numInstructionsToDecode; i++) {
         DecodedVmInstruction instr;
         if(!decodeVmInstruction(&instr, vmMemory, vmMemorySize, vmRelativeIp, baseAddress, dumpBase, vmrSub)) {
@@ -423,9 +410,10 @@ int main(int argc, char** args) {
             break;
         }
 
-        formatInstructionInfo(instr);
-        disassembledBuffer << "0x" << std::setfill('0') << std::setw(8) << std::hex << instr.address << "|"; 
-        disassembledBuffer << instr.disassembled << std::endl;
+        if(prettyPrint)
+            formatInstructionInfo(instr);
+        else
+            printf("%08X|%s\n", instr.address, instr.disassembled);
 
         if(instr.type == DecodedInstructionType_t::INSTR_RETN) {
             printf("Decoding stopped, encountered return...\n");
@@ -433,13 +421,6 @@ int main(int argc, char** args) {
         }
 
         vmRelativeIp += instr.size;
-    }
-
-    if(argc >= 7) {
-        if(!dumpBuffer(args[6], disassembledBuffer.str().c_str())) {
-            printf("Error dumping disassembly to file.\n");
-            return -1;
-        }
     }
 
     free(vmMemory);
