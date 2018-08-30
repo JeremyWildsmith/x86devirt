@@ -271,6 +271,15 @@ DecodedInstructionType_t disassembleVmInstruction(char* textBuffer, const uint8_
             sprintf(textBuffer, "cmp dword [%s], 0x%X", vmrSub, operand);
             break;
         }
+        case 0x94:
+        case 0x9B:
+        {
+
+            uint32_t operand1 = *((uint32_t*)(&instrBuffer[1]));
+
+            sprintf(textBuffer, "jmp 0x%08X", vmRelativeIp + operand1 + dumpBase);
+            break;
+        }
         default:
             return DecodedInstructionType_t::INSTR_UNKNOWN;
     }
@@ -428,7 +437,7 @@ int main(int argc, char** args) {
 
     if(argc >= 7) {
         if(!dumpBuffer(args[6], disassembledBuffer.str().c_str())) {
-            printf("Error dumping disassembly to file.");
+            printf("Error dumping disassembly to file.\n");
             return -1;
         }
     }

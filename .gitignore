@@ -1,4 +1,3 @@
-*.o
-*.out
-x86virt-disasm
 .vscode
+bin
+obj

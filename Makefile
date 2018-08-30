@@ -1,13 +1,15 @@
 CC=g++
 CFLAGS=-m32
+OBJDIR=obj
+BINDIR=bin
 
-all: x86virt-disasm
+all: $(BINDIR)/x86virt-disasm
 
-%.o: %.cpp $(DEPS)
+$(OBJDIR)/%.o: %.cpp $(DEPS)
 	$(CC) $(CFLAGS) -ggdb -c $< -o $@
 
-%.o: %.asm
-	nasm -f elf32 $<
+$(OBJDIR)/%.o: %.asm
+	nasm -f elf32 $< -o $@
 
-x86virt-disasm: main.o decrypt.o 
-	$(CC) -ggdb -m32 -o x86virt-disasm main.o decrypt.o -ludis86
+$(BINDIR)/x86virt-disasm: $(OBJDIR)/main.o $(OBJDIR)/decrypt.o 
+	$(CC) -ggdb -m32 -o $(BINDIR)/x86virt-disasm $(OBJDIR)/main.o $(OBJDIR)/decrypt.o -ludis86

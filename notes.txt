@@ -120,6 +120,18 @@ OPC OP1[DWORD]
 OPCODE 0x64 Handler at 004114B1
 OPC OP1[DWORD]
 
+==========================
+OPCODE 0x9B Handler at 004114D0
+OPC OP1[DWORD]
+jmp 
+
+
+==========================
+OPCODE 0xC6 Handler at 0041186C
+OPC OP1[DWORD]
+push 0x400000
+
+
 
 
 
