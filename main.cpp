@@ -1,4 +1,3 @@
-#include "decrypt.h"
 #include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,7 +8,8 @@
 
 #define MAX_INSTRUCTION_LENGTH 100
 #define MAX_DISASSEMBLED_SIZE 100
-typedef __attribute__((stdcall)) void (*DecryptInstruciton_t)(void* pInstrBufferOffset1, uint32_t instrLengthMinusOne, uint32_t relativeOffset);
+
+extern "C" __attribute__((stdcall)) void decryptInstruction(void* pInstrBufferOffset1, uint32_t instrLengthMinusOne, uint32_t relativeOffset);
 
 enum DecodedRegister_t {
     EFLAGS = 0,
@@ -58,8 +58,6 @@ struct DecodedVmInstruction {
     uint8_t bytes[MAX_INSTRUCTION_LENGTH];
     uint8_t size;
 };
-
-DecryptInstruciton_t fn_decryptInstruction = (DecryptInstruciton_t)(&decryptInstruction);
 
 ud_t ud_obj;
 
@@ -302,7 +300,7 @@ bool decodeVmInstruction(DecodedVmInstruction* decodedBuffer, uint8_t* vmMemory,
             vmMemory + vmRelativeIp + 1, //Need to add 1 to offset from instr length byte
             instrLength);
     
-    fn_decryptInstruction(instrBuffer, instrLength, vmRelativeIp);
+    decryptInstruction(instrBuffer, instrLength, vmRelativeIp);
     
     char disassembledBuffer[MAX_DISASSEMBLED_SIZE];
     DecodedInstructionType_t instrType = DecodedInstructionType_t::INSTR_UNKNOWN;

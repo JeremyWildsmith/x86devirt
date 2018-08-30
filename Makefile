@@ -5,9 +5,9 @@ BINDIR=bin
 
 NASMFLAG 				:=
 ifeq ($(OS),Windows_NT)
-	NASMFLAG += -f elf32
-else
 	NASMFLAG += -f win32
+else
+	NASMFLAG += -f elf32
 endif
 
 all: $(BINDIR)/x86virt-disasm
