@@ -392,7 +392,7 @@ uint8_t* readVmMemory(const char* fileName, long* pSize) {
 
 bool isInRegions(const std::vector<DisassembledRegion>& regions, uint32_t ip) {
     for(auto& region : regions) {
-        if(ip >= region.min && ip <= region.max)
+        if(ip >= region.min && ip < region.max)
             return true;
     }
 
