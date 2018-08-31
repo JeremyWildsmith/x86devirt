@@ -313,7 +313,7 @@ DecodedVmInstruction disassembleVmInstruction(const uint8_t* instrBuffer, uint32
         }
         case 0xC6:
         {
-            sprintf(result.disassembled, "push [%s]", vmrSub);
+            sprintf(result.disassembled, "push dword [%s]", vmrSub);
             break;
         }
         default:
@@ -432,7 +432,7 @@ void disassembleStub(const uint8_t* vmMemory, const unsigned int vmMemorySize, c
             if(prettyPrint)
                 formatInstructionInfo(instr);
             else
-                printf("%08X:%s\n", instr.address, instr.disassembled);
+                printf("0x%08X:%s\n", instr.address, instr.disassembled);
 
             if(instr.type == DecodedInstructionType_t::INSTR_JUMP || instr.type == DecodedInstructionType_t::INSTR_CONDITIONAL_JUMP)
                 stubsToDisassemble.push(instr.controlDestination);
