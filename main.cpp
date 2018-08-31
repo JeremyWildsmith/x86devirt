@@ -275,6 +275,11 @@ DecodedInstructionType_t disassembleVmInstruction(char* textBuffer, const uint8_
             sprintf(textBuffer, "jmp 0x%08X", vmRelativeIp + operand1 + dumpBase);
             break;
         }
+        case 0xC6:
+        {
+            sprintf(textBuffer, "push [%s]", vmrSub);
+            break;
+        }
         default:
             return DecodedInstructionType_t::INSTR_UNKNOWN;
     }
@@ -413,7 +418,7 @@ int main(int argc, char** args) {
         if(prettyPrint)
             formatInstructionInfo(instr);
         else
-            printf("%08X|%s\n", instr.address, instr.disassembled);
+            printf("%s\n", instr.disassembled);
 
         if(instr.type == DecodedInstructionType_t::INSTR_RETN) {
             printf("Decoding stopped, encountered return...\n");
