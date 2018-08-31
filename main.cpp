@@ -3,6 +3,12 @@
 #include <stdlib.h>
 #include <udis86.h>
 
+#include <queue>
+#include <vector>
+#include <algorithm>
+
+using namespace std;
+
 #define MAX_INSTRUCTION_LENGTH 100
 #define MAX_DISASSEMBLED_SIZE 100
 
@@ -44,6 +50,8 @@ enum DecodedJump_t {
 enum DecodedInstructionType_t {
     INSTR_UNKNOWN,
     INSTR_RETN,
+    INSTR_JUMP,
+    INSTR_CONDITIONAL_JUMP,
     INSTR_MISC,
 };
 
@@ -54,25 +62,40 @@ struct DecodedVmInstruction {
     uint32_t address;
     uint8_t bytes[MAX_INSTRUCTION_LENGTH];
     uint8_t size;
+    uint32_t controlDestination;
+};
+
+struct DisassembledRegion {
+    uint32_t min;
+    uint32_t max;
 };
 
 ud_t ud_obj;
 
-uint32_t getInstructionLength(uint8_t* pInstructionBuffer) {
+uint32_t getInstructionLength(const uint8_t* pInstructionBuffer) {
     return pInstructionBuffer[0] ^ pInstructionBuffer[1];
 }
 
-DecodedInstructionType_t disassemble86Instruction(char* buffer, const uint8_t* instrBuffer, uint32_t instrLength, const uint32_t instrAddress) {
+DecodedVmInstruction disassemble86Instruction(const uint8_t* instrBuffer, uint32_t instrLength, const uint32_t instrAddress) {
+    DecodedVmInstruction result;
+    result.isDecoded = false;
+    result.address = instrAddress;
+    result.controlDestination = 0;
+    result.size = instrLength;
 
+    memcpy(result.bytes, instrBuffer, instrLength);
+    
     ud_set_input_buffer(&ud_obj, instrBuffer, instrLength);
     ud_set_pc(&ud_obj, instrAddress);
     unsigned int ret = ud_disassemble(&ud_obj);
-    strcpy(buffer, ud_insn_asm(&ud_obj));
+    strcpy(result.disassembled, ud_insn_asm(&ud_obj));
 
     if(ret == 0)
-        return DecodedInstructionType_t::INSTR_UNKNOWN;
+        result.type = DecodedInstructionType_t::INSTR_UNKNOWN;
+    else
+        result.type = (!strncmp(result.disassembled, "ret", 3) ? DecodedInstructionType_t::INSTR_RETN : DecodedInstructionType_t::INSTR_MISC);
 
-    return (!strncmp(buffer, "ret", 3) ? DecodedInstructionType_t::INSTR_RETN : DecodedInstructionType_t::INSTR_MISC);
+    return result;
 }
 
 const char* getJumpName(DecodedJump_t jmp) {
@@ -142,7 +165,16 @@ DecodedRegister_t decodeVmRegisterReference(const uint8_t registerEncoded) {
     return (DecodedRegister_t)reference;
 }
 
-DecodedInstructionType_t disassembleVmInstruction(char* textBuffer, const uint8_t* instrBuffer, uint32_t instrLength, uint32_t vmRelativeIp, const uint32_t baseAddress, const uint32_t dumpBase, const char* vmrSub) {
+DecodedVmInstruction disassembleVmInstruction(const uint8_t* instrBuffer, uint32_t instrLength, uint32_t vmRelativeIp, const uint32_t baseAddress, const uint32_t dumpBase, const char* vmrSub) {
+    DecodedVmInstruction result;
+    result.isDecoded = true;
+    result.address = vmRelativeIp + dumpBase;
+    result.controlDestination = 0;
+    result.size = instrLength;
+    result.type = DecodedInstructionType_t::INSTR_MISC;
+
+    memcpy(result.bytes, instrBuffer, instrLength);
+
     switch(instrBuffer[0]) {
         case 0x4:
         {
@@ -188,14 +220,14 @@ DecodedInstructionType_t disassembleVmInstruction(char* textBuffer, const uint8_
             replacedPointerBuffer[firstLength] = 0;
             strcat(replacedPointerBuffer, vmrSub);
             strcat(replacedPointerBuffer, ptrLocation + strlen(fakePointer));
-            strcpy(textBuffer, replacedPointerBuffer);
+            strcpy(result.disassembled, replacedPointerBuffer);
 
             break;
         }
         case 0x19:
         {
             uint32_t operand1 = *((uint32_t*)(&instrBuffer[1]));
-            sprintf(textBuffer, "call 0x%08X", operand1 + baseAddress);
+            sprintf(result.disassembled, "call 0x%08X", operand1 + baseAddress);
             break;
         }
         case 0x73:
@@ -229,26 +261,26 @@ DecodedInstructionType_t disassembleVmInstruction(char* textBuffer, const uint8_
             
             ud_set_input_buffer(&ud_obj, x86Buffer, x86InstructionLength);
             ud_disassemble(&ud_obj);
-            strcpy(textBuffer, ud_insn_asm(&ud_obj));
+            strcpy(result.disassembled, ud_insn_asm(&ud_obj));
             break;
         }
         case 0x86:
         {
             DecodedRegister_t operandA = decodeVmRegisterReference(instrBuffer[1]);
-            sprintf(textBuffer, "mov %s, %s", vmrSub, getRegisterName(operandA));
+            sprintf(result.disassembled, "mov %s, %s", vmrSub, getRegisterName(operandA));
             break;
         }
         case 0x91:
         {
             uint16_t operand1 = *((uint16_t*)(&instrBuffer[1]));
-            sprintf(textBuffer, "ret 0x%X", (uint32_t)operand1);
-            return DecodedInstructionType_t::INSTR_RETN;
+            sprintf(result.disassembled, "ret 0x%X", (uint32_t)operand1);
+            result.type = DecodedInstructionType_t::INSTR_RETN;
             break;
         }
         case 0xB0:
         {
             uint32_t operand1 = *((uint32_t*)(&instrBuffer[1]));
-            sprintf(textBuffer, "add %s, 0x%X", vmrSub, operand1);
+            sprintf(result.disassembled, "add %s, 0x%X", vmrSub, operand1);
             break;
         }
         case 0x64:
@@ -257,13 +289,15 @@ DecodedInstructionType_t disassembleVmInstruction(char* textBuffer, const uint8_
             uint8_t operand1 = instrBuffer[1];
             uint32_t operand2 = *((uint32_t*)(&instrBuffer[2]));
 
-            sprintf(textBuffer, "%s 0x%08X", getJumpName(decodeVmJump(operand1)), vmRelativeIp + operand2 + dumpBase);
+            sprintf(result.disassembled, "%s 0x%08X", getJumpName(decodeVmJump(operand1)), vmRelativeIp + operand2 + dumpBase);
+            result.type = DecodedInstructionType_t::INSTR_CONDITIONAL_JUMP;
+            result.controlDestination = vmRelativeIp + operand2 + dumpBase;
             break;
         }
         case 0xE3:
         {
             const uint32_t operand = *((uint32_t*)(&instrBuffer[1]));
-            sprintf(textBuffer, "cmp dword [%s], 0x%X", vmrSub, operand);
+            sprintf(result.disassembled, "cmp dword [%s], 0x%X", vmrSub, operand);
             break;
         }
         case 0x94:
@@ -272,24 +306,27 @@ DecodedInstructionType_t disassembleVmInstruction(char* textBuffer, const uint8_
 
             uint32_t operand1 = *((uint32_t*)(&instrBuffer[1]));
 
-            sprintf(textBuffer, "jmp 0x%08X", vmRelativeIp + operand1 + dumpBase);
+            sprintf(result.disassembled, "jmp 0x%08X", vmRelativeIp + operand1 + dumpBase);
+            result.controlDestination = vmRelativeIp + operand1 + dumpBase;
+            result.type = DecodedInstructionType_t::INSTR_JUMP;
             break;
         }
         case 0xC6:
         {
-            sprintf(textBuffer, "push [%s]", vmrSub);
+            sprintf(result.disassembled, "push [%s]", vmrSub);
             break;
         }
         default:
-            return DecodedInstructionType_t::INSTR_UNKNOWN;
+            result.type = DecodedInstructionType_t::INSTR_UNKNOWN;
     }
     
-    return DecodedInstructionType_t::INSTR_MISC;
+    return result;
 }
 
-bool decodeVmInstruction(DecodedVmInstruction* decodedBuffer, uint8_t* vmMemory, const long vmMemorySize, uint32_t vmRelativeIp, 
+bool decodeVmInstruction(DecodedVmInstruction* decodedBuffer, const uint8_t* vmMemory, const long vmMemorySize, uint32_t vmRelativeIp, 
                             const uint32_t baseAddress, const uint32_t dumpBase, const char* vmrSub) {
 
+    
     uint32_t instrLength = getInstructionLength(vmMemory + vmRelativeIp);
     uint8_t instrBuffer[MAX_INSTRUCTION_LENGTH];
 
@@ -309,15 +346,12 @@ bool decodeVmInstruction(DecodedVmInstruction* decodedBuffer, uint8_t* vmMemory,
 
     if(*(unsigned short*)instrBuffer == 0xFFFF) {
         //Offset by 2 which removes the 0xFFFF part of the instruction.
-        decodedBuffer->type = disassembleVmInstruction(decodedBuffer->disassembled, instrBuffer + 2, instrLength - 2, vmRelativeIp, baseAddress, dumpBase, vmrSub);
-        decodedBuffer->isDecoded = true;
+        *decodedBuffer = disassembleVmInstruction(instrBuffer + 2, instrLength - 2, vmRelativeIp, baseAddress, dumpBase, vmrSub);
+        decodedBuffer->size += 2; // Add two for truncated 0xFFFF part.
     } else {
-        decodedBuffer->type = disassemble86Instruction(decodedBuffer->disassembled, instrBuffer, instrLength, dumpBase + vmRelativeIp);
-        decodedBuffer->isDecoded = false;
+        *decodedBuffer = disassemble86Instruction(instrBuffer, instrLength, dumpBase + vmRelativeIp);
     }
-    decodedBuffer->address = vmRelativeIp + dumpBase;
-    decodedBuffer->size = instrLength + 1;
-    memcpy(decodedBuffer->bytes, instrBuffer, instrLength);
+    decodedBuffer->size += 1; //Add one byte for length byte.
 
     return true;
 }
@@ -356,6 +390,63 @@ uint8_t* readVmMemory(const char* fileName, long* pSize) {
     return vmMemory;
 }
 
+bool isInRegions(const std::vector<DisassembledRegion>& regions, uint32_t ip) {
+    for(auto& region : regions) {
+        if(ip >= region.min && ip <= region.max)
+            return true;
+    }
+
+    return false;
+}
+
+void disassembleStub(const uint8_t* vmMemory, const unsigned int vmMemorySize, const uint32_t baseAddress, const uint32_t dumpBase, 
+                        const uint32_t initialIp, unsigned int numInstructionsToDecode, 
+                        const char* vmrSub, bool prettyPrint) {
+    
+    vector<DisassembledRegion> disassembledStubs;
+    queue<uint32_t> stubsToDisassemble;
+    stubsToDisassemble.push(initialIp);
+
+
+    while(!stubsToDisassemble.empty()) {
+        uint32_t vmRelativeIp = stubsToDisassemble.front() - dumpBase;
+        stubsToDisassemble.pop();
+
+        if(isInRegions(disassembledStubs, vmRelativeIp))
+            continue;
+
+        DisassembledRegion current;
+        current.min = vmRelativeIp;
+        printf("ORG 0x%08X\n", dumpBase + vmRelativeIp);
+
+        for(int i = 0; i < numInstructionsToDecode; i++) {
+            DecodedVmInstruction instr;
+
+            bool successful = decodeVmInstruction(&instr, vmMemory, vmMemorySize, vmRelativeIp, baseAddress, dumpBase, vmrSub);
+            vmRelativeIp += instr.size;
+
+            if(!successful) {
+                printf("Decoding stopped due to invalid opcodes, or encountered end of VM Memory...\n");
+                break;
+            }
+
+            if(prettyPrint)
+                formatInstructionInfo(instr);
+            else
+                printf("%08X:%s\n", instr.address, instr.disassembled);
+
+            if(instr.type == DecodedInstructionType_t::INSTR_JUMP || instr.type == DecodedInstructionType_t::INSTR_CONDITIONAL_JUMP)
+                stubsToDisassemble.push(instr.controlDestination);
+            
+            if(instr.type == DecodedInstructionType_t::INSTR_RETN || instr.type == DecodedInstructionType_t::INSTR_JUMP)
+                break;
+        }
+
+        current.max = vmRelativeIp;
+        disassembledStubs.push_back(current);
+    }
+}
+
 int main(int argc, char** args) {
     const uint32_t baseAddress = 0x400000;
 
@@ -385,9 +476,9 @@ int main(int argc, char** args) {
 
     const uint32_t dumpBase = strtol(args[2], NULL, 16);
     const unsigned int numInstructionsToDecode = atoi(args[4]);
-    uint32_t vmRelativeIp = (uint32_t)strtol(args[3], NULL, 16);
+    uint32_t vmInitialIp = (uint32_t)strtol(args[3], NULL, 16);
 
-    if(vmRelativeIp < dumpBase || vmRelativeIp >= dumpBase + vmMemorySize) {
+    if(vmInitialIp < dumpBase || vmInitialIp >= dumpBase + vmMemorySize) {
         printf("IP is outside of bounds of Virtual Memory.\n");
         return -1;
     }
@@ -398,35 +489,15 @@ int main(int argc, char** args) {
         return -1;   
     }
 
-    vmRelativeIp -= dumpBase;
-
     if(prettyPrint) {
         printf("X86devirt Disassembler, by Jeremy Wildsmith\n");
         printf("Assumes image base is at 0x%08X\n\n", baseAddress);
         printf("Substituting VMR with %s\n\n", vmrSub);
         printf("Instructions not coloured green are decrypted x86 instructions without decoding or interpreting.\n\n");
-        printf("Attempting to decode %d instructions, starting from 0x%08X\n\n", numInstructionsToDecode, dumpBase + vmRelativeIp);
+        printf("Attempting to decode %d instructions, starting from 0x%08X\n\n", numInstructionsToDecode, vmInitialIp);
     }
     
-    for(int i = 0; i < numInstructionsToDecode; i++) {
-        DecodedVmInstruction instr;
-        if(!decodeVmInstruction(&instr, vmMemory, vmMemorySize, vmRelativeIp, baseAddress, dumpBase, vmrSub)) {
-            printf("Decoding stopped due to invalid opcodes, or encountered end of VM Memory...\n");
-            break;
-        }
-
-        if(prettyPrint)
-            formatInstructionInfo(instr);
-        else
-            printf("%s\n", instr.disassembled);
-
-        if(instr.type == DecodedInstructionType_t::INSTR_RETN) {
-            printf("Decoding stopped, encountered return...\n");
-            break;
-        }
-
-        vmRelativeIp += instr.size;
-    }
+    disassembleStub(vmMemory, vmMemorySize, baseAddress, dumpBase, vmInitialIp, numInstructionsToDecode, vmrSub, prettyPrint);
 
     free(vmMemory);
     return 0;
