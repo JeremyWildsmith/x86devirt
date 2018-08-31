@@ -417,7 +417,6 @@ void disassembleStub(const uint8_t* vmMemory, const unsigned int vmMemorySize, c
 
         DisassembledRegion current;
         current.min = vmRelativeIp;
-        printf("ORG 0x%08X\n", dumpBase + vmRelativeIp);
 
         for(int i = 0; i < numInstructionsToDecode; i++) {
             DecodedVmInstruction instr;
