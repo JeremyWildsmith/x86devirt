@@ -1,8 +1,5 @@
 from x64dbgpy.pluginsdk import *
 import x64dbgpy
-import struct
-import time
-import math
 import os
 import subprocess
 
@@ -47,14 +44,12 @@ def devirt(source, destination, size):
         if(out.type == 1 and x86.find(" ") >= 0 and x86.find(",") < 0 and x86.find("[") < 0): #If is branching instruction with one operand that is not a pointer
             
             operation, operand = x86.split(" ")
-            x64dbg._plugin_logputs(operand)
 
             if(operand in labels):
                 correctLocation = findLabelLocation(labelLocations, operand)
                 if(correctLocation is not None):
                     #Correct control flow address
                     correctedInstruction = operation + " " + hex(correctLocation)
-                    x64dbg._plugin_logputs("Corrected To: " + correctedInstruction)
                     AssembleMem(assembleAddress, correctedInstruction)
 
                     out = x64dbg.DISASM_INSTR()
@@ -73,7 +68,6 @@ def devirt(source, destination, size):
         if(correctLocation is not None):
             address = unresolved["address"]
             correctedInstruction = unresolved["operation"] + " " + hex(correctLocation)
-            x64dbg._plugin_logputs("Corrected: " + correctedInstruction)
             AssembleMem(address, correctedInstruction)
             out = x64dbg.DISASM_INSTR()
             x64dbg.DbgDisasmAt(address, out)
@@ -85,17 +79,4 @@ def devirt(source, destination, size):
             x64dbg._plugin_logputs("Unable to resolve jump!")
     return
 
-        
-            
-def main():
-    global continueTracing
-    global traceLog
-
-    
-    out = x64dbg.DISASM_INSTR()
-    x64dbg.DbgDisasmAt(0x00411A5D, out)
-    x64dbg._plugin_logputs(str(out.type))
-    #toolPath = os.path.join(os.path.dirname(os.path.realpath(__file__)), "asdf.exe")
-    #x64dbg._plugin_logputs(toolPath)
-
-main()
+x64dbg._plugin_logputs("Python script to use the x86virt-disassembler tool to reconstruct and automatically devirtualize protected executables. Written by Jeremy Wildsmith, github repo: https://github.com/JeremyWildsmith/x86devirt")
