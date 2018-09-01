@@ -123,9 +123,16 @@ def findVmStubCrossReferences(vmStub):
                 vmReferenceInstruction = decomposedInstructions[0]
                 
                 if (vmReferenceInstruction.flowControl == "FC_UNC_BRANCH" and vmReferenceInstruction.operands[0].value == vmStub):                    
-                    references.append({"start": referenceMatch[0] + val.addr, "jump": instructionLocation})
+                    references.append({"start": referenceMatch[0] + val.addr, "jump": instructionLocation + val.addr})
 
     return references
+
+def emulateAndFind(startStub, jumpAddress):
+    SetEIP(startStub)
+    SetBreakpoint(jumpAddress)
+    debug.Run()
+    DeleteBreakpoint(jumpAddress)
+    
 
 def main():
     x64dbg._plugin_logputs("Python script to use the x86virt-disassembler tool to reconstruct and automatically devirtualize protected executables. Written by Jeremy Wildsmith, github repo: https://github.com/JeremyWildsmith/x86devirt")
@@ -142,6 +149,8 @@ def main():
     references = findVmStubCrossReferences(vmStub)
     x64dbg._plugin_logputs("Found " + str(len(references)) + " references... Emulating to get locations of encrypted sections")
     #SetEIP
+    for r in references:
+        emulateAndFind(r["start"], r["jump"])
 
     #Message("The Virtual Machine stub has been located and hooked. Invoke virturalized behaviour via user interaction and then type ")
 
