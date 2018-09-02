@@ -48,7 +48,7 @@ else
 
 ==========================
 OPCODE B0, Handler at 00411632
-OC OPERAND1_CONSTANT_BYTE
+OC OPERAND1_CONSTANT_DWORD
 
 VMR += OPERAND1_CONSTANT[BYTE]
 
@@ -131,7 +131,19 @@ OPCODE 0xC6 Handler at 0041186C
 OPC OP1[DWORD]
 push 0x400000
 
+==========================
+Opcode 4D
+OPC OP1[BYTE}
+SHL VMR, OP1
 
+==========================
+Opcode 93 handler 00411602
+OPC OP1[dword}
+mov VMR, OP1
+
+==========================
+Opcode C0 handler 0041181B
+mov [VMR], OP1[DWORD]
 
 
 
