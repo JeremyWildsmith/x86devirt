@@ -7,10 +7,14 @@ import distorm3
 from time import sleep
 import struct
 
-devirtTool = os.path.join(os.path.dirname(os.path.realpath(__file__)), "x86virt-disasm.exe")
-bufferBin = os.path.join(os.path.dirname(os.path.realpath(__file__)), "buffer.bin")
+nasmTool = "nasm.exe"
 
-maxInstructions = "999999"
+bytecodeSignatures = [
+    {
+        "id": 1,
+        "signature": "rule R {strings: $str = { } condition: $str}"
+    }
+]
 
 def findLabelLocation(labels, searchLabel):
     for l in labels:
@@ -19,82 +23,48 @@ def findLabelLocation(labels, searchLabel):
 
     return None
 
-def devirt(source, destination, size):
+def devirt(source, destination, size, maxDestSize, mappingsLocation, decryptSubroutineDumpLocation):
     global maxInstructions
+
+    outAsmName = "out_" + hex(destination) + ".asm";
     
     x64dbg._plugin_logputs("Dumping bytecode... ")
     sourceBuffer = Read(source, size)
 
-    file = open(bufferBin, "wb")
+    file = open("buffer.bin", "wb")
     file.write(sourceBuffer)
     file.close()
     
-    x64dbg._plugin_logputs("Invoking disassembler: " + devirtTool + " " + bufferBin + " " + hex(destination) + " " + hex(destination) + " " + maxInstructions + " " + "ecx false")
-    disassembledOutput = subprocess.check_output([devirtTool, bufferBin, hex(destination), hex(destination), maxInstructions, "ecx", "false"])
+    x64dbg._plugin_logputs("Invoking disassembler: x86virt-disasm.exe buffer.bin " + hex(destination) + " " + hex(destination) + " " + mappingsLocation + " " + decryptSubroutineDumpLocation)
+    disassembledOutput = subprocess.check_output(["x86virt-disasm.exe", "buffer.bin", hex(destination), hex(destination), mappingsLocation, decryptSubroutineDumpLocation])
 
-    labels = []
-    for instruction in disassembledOutput.splitlines():
-        label, x86 = instruction.split(":")
-        labels.append(label);
+    #Write disassembly to file
+    file = open(outAsmName, "wb")
+    file.write(disassembledOutput)
+    file.close()
 
-    assembleAddress = destination
-    labelLocations = [];
+    x64dbg._plugin_logputs("Invoking nasm: nasm.exe -f bin " + outAsmName)
+    disassembledOutput = subprocess.check_output(["nasm.exe", "-f", "bin", outAsmName])
+	
+    #Reading assembled bytes into buffer...
+    file = open(os.path.splitext(outAsmName)[0], "rb")
+    assembledCode = file.read()
+    file.close()
 
-    unresolvedLocations = []
-    for instruction in disassembledOutput.splitlines():
-        label, x86 = instruction.split(":")
-        labelLocations.append({"name": label, "address": assembleAddress})
+    if(len(assembledCode) > maxDestSize):
+        x64dbg._plugin_logputs("Error, destination of " + str(maxDestSize) + " is too small for " + str(len(assembledCode)))
+        return 0
         
-        if(not AssembleMem(assembleAddress, x86)):
-            x64dbg._plugin_logputs("Unable to assemble: " + instruction)
-            return -1
-            
-        out = x64dbg.DISASM_INSTR()
-        x64dbg.DbgDisasmAt(assembleAddress, out)
+    x64dbg.Memory_Write(destination, assembledCode, len(assembledCode))
+    x64dbg._plugin_logputs("It fits! Decrypted into " + hex(destination))
+    #Get nasm to assemble it...
+    return len(assembledCode)
 
-        if(out.type == 1 and x86.find(" ") >= 0 and x86.find(",") < 0 and x86.find("[") < 0): #If is branching instruction with one operand that is not a pointer
-            
-            operation, operand = x86.split(" ")
-
-            if(operand in labels):
-                correctLocation = findLabelLocation(labelLocations, operand)
-                if(correctLocation is not None):
-                    #Correct control flow address
-                    correctedInstruction = operation + " " + hex(correctLocation)
-                    AssembleMem(assembleAddress, correctedInstruction)
-
-                    out = x64dbg.DISASM_INSTR()
-                    x64dbg.DbgDisasmAt(assembleAddress, out)
-                else:
-                    correctedInstruction = operation + " " + operand
-                    AssembleMem(assembleAddress, correctedInstruction)
-                    out = x64dbg.DISASM_INSTR()
-                    x64dbg.DbgDisasmAt(assembleAddress, out)
-                    unresolvedLocations.append({"address": assembleAddress, "label": operand, "operation": operation, "size": out.instr_size})
-                    
-        assembleAddress += out.instr_size
-
-    for unresolved in unresolvedLocations:
-        correctLocation = findLabelLocation(labelLocations, unresolved["label"])
-        if(correctLocation is not None):
-            address = unresolved["address"]
-            correctedInstruction = unresolved["operation"] + " " + hex(correctLocation)
-            AssembleMem(address, correctedInstruction)
-            out = x64dbg.DISASM_INSTR()
-            x64dbg.DbgDisasmAt(address, out)
-
-            for x in range(out.instr_size + address, unresolved["size"] + address):
-                AssembleMem(x, "nop")
-                
-        else:
-            x64dbg._plugin_logputs("Unable to resolve jump!")
-
-
-    return assembleAddress - destination
-
-def findVmStub():
-    rule = yara.compile(source='rule VmStub {strings: $hex_string = { 60 9C 9C 59 8B C4 8B 5C 24 24 8B 54 24 28 E8 00 00 00 00 5C 8B ?? ?? ?? ?? ?? ?? 55 8B EC 83 EC 2C 89 44 24 28 89 0C 24 33 C9 8D 7C 24 04 8B F2 46 8A 02 32 42 01 0F B6 C0 50 } condition: $hex_string}')
+def findVmStubs():
+    rule = yara.compile(source='rule VmStub {strings: $hex_string = { 60 9C 9C 59 8B C4 8B 5C 24 24 8B 54 24 28 E8 00 00 00 00 5C 8B A4 24 E1 FE FF FF 55 8B EC 83 EC 2C 89 44 24 28 89 0C 24 33 C9 8D 7C 24 04 8B F2 46 8A 02 32 42 01 0F B6 C0 } condition: $hex_string}')
     buffer = GetMainModuleSectionList()
+
+    stubs = []
     for val in buffer:
         x64dbg._plugin_logputs("Scanning section: " + val.name)
         scanBuffer = Read(val.addr, val.size)
@@ -102,14 +72,12 @@ def findVmStub():
 
         if(len(matches) <= 0):
              continue
-        
-        matchedStrings = matches[0].strings
 
-        if(len(matchedStrings) == 1):
-            vmStubMatch = matchedStrings[0]
-            return vmStubMatch[0] + val.addr
+        for m in matches:
+            for vmStubMatch in m.strings:
+                stubs.append(vmStubMatch[0] + val.addr)
 
-    return None
+    return stubs
 
 def findVmStubCrossReferences(vmStub):
     #x64dbg has not provided an interface to their cross-reference functionality yet...
@@ -147,28 +115,140 @@ def emulateAndFind(startStub, jumpAddress):
     DeleteBreakpoint(jumpAddress)
     original = struct.unpack("<L", Read(Register.ESP, 4))[0]
     bytecode = struct.unpack("<L", Read(Register.ESP + 4, 4))[0]
+
+    #Seek upwards for jump to VM Stub
+    jmpLocation = original - 5
+    while(True):
+        instrBuffer = Read(jmpLocation, 10)
+        decomposedInstructions = distorm3.Decompose(jmpLocation, instrBuffer)
+        if(decomposedInstructions[0].flowControl == "FC_UNC_BRANCH"):
+            break;
+
+        jmpLocation -= 1
+
+    #Calculate available size...
+    size = original - jmpLocation
+
+    while(True):
+        instrBuffer = ReadByte(original);
+        if(instrBuffer == 0x90):
+            size += 1
+        else:
+            break;
+
+        original += 1
+
     Register.EIP = oldEip
     Register.ESP += 8
 
-    return {"bytecode": bytecode, "original":original}
+    return {"bytecode": bytecode, "original":jmpLocation, "size": size}
 
-def main():
+def determineInstructionFromHandler(handlerStub, instructionRules):
+    handlerBuffer = Read(handlerStub, 200)
+    matches = instructionRules.match(data=handlerBuffer)
 
-    Message("This python script is an x86virt devirtualizer written by Jeremy Wildsmith. It has been published on the github page https://github.com/JeremyWildsmith/x86devirt")    
-    result = MessageYesNo("This script should be run when EIP Matches the entrypoint (not OEP, just the correct entrypoint). Is EIP at OP? Press No to cancel.")
+    if(len(matches) <= 0):
+        return None;
 
-    if(result == False):
+    for m in matches:
+        for vmStubMatch in m.strings:
+            if(vmStubMatch[0] != 0):
+                continue
+            
+            handlerNo = int(vmStubMatch[1][2:])
+            return handlerNo
+
+    return None
+
+def getInstructionMappings(vmStub, instructionRules):
+    addressCalculateInstructionMappings = vmStub + 0xEF
+    oldEip = Register.EIP
+    oldEax = Register.EAX
+    oldEdx = Register.EDX
+    
+    SetEIP(addressCalculateInstructionMappings)
+    debug.StepOver()
+    debug.StepOver()
+    debug.StepOver()
+    SetEIP(Register.EIP + 4)
+    baseOfMap = Register.EAX
+
+    startOfDispatch = Register.EIP
+    mappings = bytearray(0xFF + 1)
+    for i in range(0, 0xFF + 1):
+        Register.EAX = baseOfMap
+        Register.EDX = i
+
+        debug.StepOver()
+        debug.StepOver()
+        debug.StepOver()
+        debug.StepOver()
+        debug.StepOver()
+        
+        handlerStub = Register.EAX
+        mappedInstrNo = determineInstructionFromHandler(handlerStub, instructionRules)
+
+        if(mappedInstrNo is not None):
+            x64dbg._plugin_logputs("Matched opcode " + hex(i) + " to handler at :" + hex(handlerStub) + " for handler of instr no " + str(mappedInstrNo))
+        else:
+            mappedInstrNo = i
+    
+        mappings[i] = mappedInstrNo
+        SetEIP(startOfDispatch)
+    
+    Register.EAX = oldEax
+    Register.EIP = oldEip
+    Register.EDX = oldEdx
+
+    return mappings;
+
+def getDecryptSubroutine(vmStub):
+    addressCallDecrypt = vmStub + 0x44
+    instrBuffer = Read(addressCallDecrypt, 10)
+    decomposedInstructions = distorm3.Decompose(addressCallDecrypt, instrBuffer)
+    decryptCall = decomposedInstructions[0]
+    if (decryptCall.flowControl == "FC_CALL"):
+        return decryptCall.operands[0].value;
+    
+    return None;
+
+def dumpDecryptSubroutine(vmStub):
+    outFileName = "decrypt.bin"
+    decryptSubroutine = getDecryptSubroutine(vmStub)
+
+    if(decryptSubroutine is None):
+        return None
+    
+    decryptSubroutineBytes = Read(decryptSubroutine, 10000)
+    decryptFile = open(outFileName, "wb")
+    decryptFile.write(decryptSubroutineBytes)
+    decryptFile.close()
+
+    return outFileName
+
+def dumpInstructionMap(vmStub, instructionRules):
+    outFile = "instrmap.bin"
+    mappings = getInstructionMappings(vmStub, instructionRules)
+
+    if(mappings is None):
+        return None
+    
+    mappingsFile = open(outFile, "wb")
+    mappingsFile.write(mappings)
+    mappingsFile.close()
+    return outFile
+    
+def devirtVmStub(vmStub, instructionRules):
+
+    x64dbg._plugin_logputs("Getting decrypt subroutine...")
+    decryptSubroutine = dumpDecryptSubroutine(vmStub)
+
+    if(decryptSubroutine is None):
+        x64dbg._plugin_logputs("Unable to locate decrypt instruction subroutine, failed.")
         return False
 
-    Message("Now attempting to locate all present VM stubs and decrypt / devirtualize respective functions.")
-    
-    x64dbg._plugin_logputs("Python script to use the x86virt-disassembler tool to reconstruct and automatically devirtualize protected executables. Written by Jeremy Wildsmith, github repo: https://github.com/JeremyWildsmith/x86devirt")
-    x64dbg._plugin_logputs("Scanning for the location of the VM Stub...")
-    vmStub = findVmStub()
-
-    if(vmStub is None):
-        x64dbg._plugin_logputs("Failed to locate VM Stub. Exiting...")
-        return
+    x64dbg._plugin_logputs("Extracting instruction mappings...")
+    instructionMappings = "instrmap.bin"#dumpInstructionMap(vmStub, instructionRules)
 
     x64dbg._plugin_logputs("VM Stub located at: " + hex(vmStub))
     x64dbg._plugin_logputs("Searching for cross references to VM Stub...")
@@ -176,6 +256,9 @@ def main():
     references = findVmStubCrossReferences(vmStub)
     x64dbg._plugin_logputs("Found " + str(len(references)) + " references... Emulating to get locations of encrypted sections")
 
+    if len(references) == 0:
+        x64dbg._plugin_logputs("VM Stub has no references, failed.")
+        return False
 
     encryptedFunctions = []
     for r in references:
@@ -185,43 +268,54 @@ def main():
         x64dbg._plugin_logputs("Found encrypted function: " + hex(func["bytecode"]))
         encryptedFunctions.append(func)
 
-    allocatedSections = {}
     for ef in encryptedFunctions:
         sectionAddress = ef["reference"]["section"].addr
         sectionSize = ef["reference"]["section"].size
-        
-        if(sectionAddress not in allocatedSections):
-            allocatedDecryptAddress = 0
-            tryAllocateAddress = 0x400000
-            while(allocatedDecryptAddress == 0):
-                allocatedDecryptAddress = RemoteAlloc(sectionSize, tryAllocateAddress)
-                tryAllocateAddress += 0x10000
-            
-            allocatedSections[sectionAddress] = {"origin": allocatedDecryptAddress, "writeAddress": allocatedDecryptAddress}
-
         dumpSize = sectionSize - (ef["bytecode"] - sectionAddress)
-        writeAddress = allocatedSections[sectionAddress]["writeAddress"]
-        
-        x64dbg._plugin_logputs("Decrypting function to: " + hex(writeAddress) + ", using dump size: " + str(dumpSize))
+        x64dbg._plugin_logputs("Decrypting function from " + hex(ef["bytecode"]) + " to: " + hex(ef["original"]) + ", using dump size: " + str(dumpSize))
 
-        assembleSize = devirt(ef["bytecode"], writeAddress, dumpSize)
+        assembleSize = devirt(ef["bytecode"], ef["original"], dumpSize, ef["size"], instructionMappings, decryptSubroutine)
         if(assembleSize < 0):
             x64dbg._plugin_logputs("Stopping unpacking, assemble operation failed.")
             return False
+    
+    return True
 
-        allocatedSections[sectionAddress]["writeAddress"] += assembleSize
-        
-        x64dbg._plugin_logputs("Hijacking VM Entry for function " + hex(ef["reference"]["start"]) + " to decrypted function: " + hex(writeAddress))
-        
-        if(not AssembleMem(ef["reference"]["start"], "jmp " + hex(writeAddress))):
-            x64dbg._plugin_logputs("Hijacking failed...")
+def tryDevirtAll(instructionRules):
+    
+    x64dbg._plugin_logputs("Scanning for the location of the VM Stub...")
+    vmStubs = findVmStubs()
+
+    if(len(vmStubs) == 0):
+        x64dbg._plugin_logputs("Failed to locate any VM Stubs. Exiting...")
+        return False;
+
+    if(len(vmStubs) > 1):
+        return False;
+    
+    for s in vmStubs:
+        x64dbg._plugin_logputs("Attempting to devirt stub: " + hex(s))
+        if(devirtVmStub(s, instructionRules) == False):
+            x64dbg._plugin_logputs("Stopping unpacking, failed to devirt stub: " + hex(s))
             return False
 
+    return True;
 
-    resultMessage = "Devirtualization was a success! You can now run or dump the application. Make sure you dump with the section(s) that contain the devirtualized code: "
-    for key, val in allocatedSections.iteritems():
-        resultMessage += hex(val["origin"]) + " "
+def main():
+    #Message("This python script is an x86virt devirtualizer written by Jeremy Wildsmith. It has been published on the github page https://github.com/JeremyWildsmith/x86devirt")    
+    #result = MessageYesNo("This script should be run when EIP Matches the entrypoint (not OEP, just the correct entrypoint). Is EIP at OP? Press No to cancel.")
+
+    #if(result == False):
+    #    return False
+    
+    #Message("Now attempting to locate all present VM stubs and decrypt / devirtualize respective functions.")
+
+    os.chdir(os.path.dirname(os.path.realpath(__file__)))
+    instructionRules = yara.compile(filepath='instructions.yara')
+
+    tryDevirtAll(instructionRules)
         
-    Message(resultMessage)
-    return True
+    Message("Application has been devirtualized, refer to log for more details...")
+
+
 main()

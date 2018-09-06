@@ -145,6 +145,11 @@ mov VMR, OP1
 Opcode C0 handler 0041181B
 mov [VMR], OP1[DWORD]
 
+Opcode D6 0041163E
+OPC OP1[BYTE]
+
+
+
 
 
 
