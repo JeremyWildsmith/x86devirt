@@ -1,4 +1,4 @@
-#x86devirt
+# x86devirt
 
 This is a project that aims to devirtualize & disassemble applications that
 have been virtualized using x86virt.
@@ -15,7 +15,7 @@ applciations protected using a VM, the open source project was never
 referenced during the development of this project and all implementation is
 based entirely on what has been reverse engineered out of protected executables.
 
-#Credits / Dependencies
+# Credits / Dependencies
 - The virtualizer / packer was written by ReWolf. (https://github.com/rwfpl/rewolf-x86-virtualizer)
 - Angr is used to symbolically execute the jump decoder and extract the jump mappings. (http://angr.io/)
 - Distorm3 is used throughout (https://github.com/gdabah/distorm)
@@ -25,15 +25,15 @@ based entirely on what has been reverse engineered out of protected executables.
 - nasm assembler is used to assemble the x86 output from the x86virt-disassembler utility
 - Allen Tsang (https://github.com/AllenTsang) studied parts of the virtualizer with me and provided valuable input
 
-#Documentation / Feedback
+# Documentation / Feedback
 This unpacker and its internal workings have been documented at http://jeremywildsmith.com
 
 Please e-mail any feedback to jeremywildsmith (th!s i$ an at symb0l) Y(eah)(w)hoo d0t ca
 
-#License
+# License
 This project and all of its' source files are licensed under the MIT license. NASM is licensed under a seperate license, mentioned under NASM-LICENSE in the distribution.
 
-#How to Use
+# How to Use
 You must have the following installed to use the x86virt unpacker/devirtualizer:
 1. Python 2.7
 2. x64dbg
@@ -46,5 +46,5 @@ Once the above items have been installed and correctly configured:
 2. Open the packed / virtualized target in x64dbg
 3. Select the Plugins -> x64dbgpy -> Open Script menu item, and browse to the downloaded x86devirt.py script
 
-#How to Build
+# How to Build
 The only portion that you are required to build is the disassembler engine, which is written in C++. On Windows you can build this using cygwin and the make command.
