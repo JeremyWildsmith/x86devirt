@@ -25,7 +25,6 @@ The devirtualizer on this repository was developed independently by myself (Jere
 - x64dbg Debugger is used as the debugging engine to analyze the target. (https://github.com/x64dbg/x64dbg)
 - VirusTotal/yara-python is used to match signatures (for instruction handlers, the VM stub etc...) (https://github.com/gdabah/distorm)
 - nasm assembler is used to assemble the x86 output from the x86virt-disassembler utility
-- Allen Tsang (https://github.com/AllenTsang) studied parts of the virtualizer with me and provided valuable input
 
 # Documentation / Feedback
 
