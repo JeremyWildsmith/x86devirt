@@ -11,12 +11,14 @@ x86 Virtualizer is an open source project located at the following URL:
 https://github.com/rwfpl/rewolf-x86-virtualizer
 
 Since this project aims to build practical experience reverse engineering
-applciations protected using a VM, the open source project was never
+applications protected using a VM, the open source project was never
 referenced during the development of this project and all implementation is
 based entirely on what has been reverse engineered out of protected executables.
 
 # Credits / Dependencies
-- The virtualizer / packer was written by ReWolf. (https://github.com/rwfpl/rewolf-x86-virtualizer)
+The devirtualizer on this repository was developed independently by myself (Jeremy Wildsmith) with the help of the following tools / libraries:
+
+- The virtualizer / packer that this tool aims to counter was written by ReWolf. (https://github.com/rwfpl/rewolf-x86-virtualizer)
 - Angr is used to symbolically execute the jump decoder and extract the jump mappings. (http://angr.io/)
 - Distorm3 is used throughout (https://github.com/gdabah/distorm)
 - udis86 is used in the disassembler engine to disassemble instructions that decode into an x86 form (https://github.com/vmt/udis86)
