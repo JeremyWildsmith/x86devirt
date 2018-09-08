@@ -6,6 +6,7 @@ import yara
 import distorm3
 from time import sleep
 import struct
+import angr
 
 nasmTool = "nasm.exe"
 
@@ -60,8 +61,7 @@ def devirt(source, destination, size, maxDestSize, mappingsLocation, decryptSubr
     #Get nasm to assemble it...
     return len(assembledCode)
 
-def findVmStubs():
-    rule = yara.compile(source='rule VmStub {strings: $hex_string = { 60 9C 9C 59 8B C4 8B 5C 24 24 8B 54 24 28 E8 00 00 00 00 5C 8B A4 24 E1 FE FF FF 55 8B EC 83 EC 2C 89 44 24 28 89 0C 24 33 C9 8D 7C 24 04 8B F2 46 8A 02 32 42 01 0F B6 C0 } condition: $hex_string}')
+def findVmStubs(rule):
     buffer = GetMainModuleSectionList()
 
     stubs = []
@@ -79,12 +79,12 @@ def findVmStubs():
 
     return stubs
 
-def findVmStubCrossReferences(vmStub):
+def findVmStubCrossReferences(vmStub, rule):
+    
     #x64dbg has not provided an interface to their cross-reference functionality yet...
     #So... We're going to have to do this with signatures
     references = []
     signatureSize = 30
-    rule = yara.compile(source='rule JumpToVmStub {strings: $hex_string = { E8 00 00 00 00 9C 81 6C ?? ?? ?? ?? ?? ?? 9D E8 00 00 00 00 9C 81 6C ?? ?? ?? ?? ?? ?? 9D } condition: $hex_string}')
     buffer = GetMainModuleSectionList()
     for val in buffer:
         x64dbg._plugin_logputs("Scanning section: " + val.name)
@@ -238,7 +238,7 @@ def dumpInstructionMap(vmStub, instructionRules):
     mappingsFile.close()
     return outFile
     
-def devirtVmStub(vmStub, instructionRules):
+def devirtVmStub(vmStub, yaraRules):
 
     x64dbg._plugin_logputs("Getting decrypt subroutine...")
     decryptSubroutine = dumpDecryptSubroutine(vmStub)
@@ -248,12 +248,12 @@ def devirtVmStub(vmStub, instructionRules):
         return False
 
     x64dbg._plugin_logputs("Extracting instruction mappings...")
-    instructionMappings = "instrmap.bin"#dumpInstructionMap(vmStub, instructionRules)
+    instructionMappings = dumpInstructionMap(vmStub, yaraRules["instructions"])
 
     x64dbg._plugin_logputs("VM Stub located at: " + hex(vmStub))
     x64dbg._plugin_logputs("Searching for cross references to VM Stub...")
 
-    references = findVmStubCrossReferences(vmStub)
+    references = findVmStubCrossReferences(vmStub, yaraRules["vmRef"])
     x64dbg._plugin_logputs("Found " + str(len(references)) + " references... Emulating to get locations of encrypted sections")
 
     if len(references) == 0:
@@ -281,10 +281,10 @@ def devirtVmStub(vmStub, instructionRules):
     
     return True
 
-def tryDevirtAll(instructionRules):
+def tryDevirtAll(yaraRules):
     
     x64dbg._plugin_logputs("Scanning for the location of the VM Stub...")
-    vmStubs = findVmStubs()
+    vmStubs = findVmStubs(yaraRules["vmStub"])
 
     if(len(vmStubs) == 0):
         x64dbg._plugin_logputs("Failed to locate any VM Stubs. Exiting...")
@@ -295,11 +295,15 @@ def tryDevirtAll(instructionRules):
     
     for s in vmStubs:
         x64dbg._plugin_logputs("Attempting to devirt stub: " + hex(s))
-        if(devirtVmStub(s, instructionRules) == False):
+        if(devirtVmStub(s, yaraRules) == False):
             x64dbg._plugin_logputs("Stopping unpacking, failed to devirt stub: " + hex(s))
             return False
 
     return True;
+
+def extractJumpMap(jumpDecoder):
+    jumpDecCalc = jumpDecoder + 0xA
+    instructions = Read(jumpDecCalc, 0x100)
 
 def main():
     #Message("This python script is an x86virt devirtualizer written by Jeremy Wildsmith. It has been published on the github page https://github.com/JeremyWildsmith/x86devirt")    
@@ -311,11 +315,16 @@ def main():
     #Message("Now attempting to locate all present VM stubs and decrypt / devirtualize respective functions.")
 
     os.chdir(os.path.dirname(os.path.realpath(__file__)))
-    instructionRules = yara.compile(filepath='instructions.yara')
+    yaraRules = {
+        "instructions": yara.compile(filepath='instructions.yara'),
+        "vmStub": yara.compile(filepath='vmStub.yara'),
+        "vmRef": yara.compile(filepath='vmRef.yara')
+    }
 
-    tryDevirtAll(instructionRules)
+    tryDevirtAll(yaraRules)
         
     Message("Application has been devirtualized, refer to log for more details...")
 
 
-main()
+#main()
+extractJumpMap(0x411000)
