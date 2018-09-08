@@ -26,9 +26,8 @@ based entirely on what has been reverse engineered out of protected executables.
 - Allen Tsang (https://github.com/AllenTsang) studied parts of the virtualizer with me and provided valuable input
 
 # Documentation / Feedback
-This unpacker and its internal workings have been documented at http://jeremywildsmith.com
 
-Please e-mail any feedback to jeremywildsmith (th!s i$ an at symb0l) Y(eah)(w)hoo d0t ca
+Please e-mail any feedback or questions to jeremywildsmith (th!s i$ an at symb0l) Y(eah)(w)hoo d0t ca
 
 # License
 This project and all of its' source files are licensed under the MIT license. NASM is licensed under a seperate license, mentioned under NASM-LICENSE in the distribution.
