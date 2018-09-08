@@ -30,7 +30,7 @@ The devirtualizer on this repository was developed independently by myself (Jere
 
 Please e-mail any feedback or questions to jeremywildsmith (th!s i$ an at symb0l) Y(eah)(w)hoo d0t ca
 
-I haven't had to to document this thoroughly and there is a lot going on inside the application, but below is a basic overview:
+I haven't had time to document this thoroughly and there is a lot going on inside the application, but below is a basic overview:
 
 There are basically three main components in the dist:
 1. x86devirt.py - The job of this script is to find the VM Interpreter, the virtualized subroutines, the VM Instruction Handlers and to get the jmp  mappings using x86devirt_jmp.py. It also finds what opcodes map to what handlers (Since the opcode mappings and jmp mappings are randomized for every binary protected [and every vm layer]). The instructions are also encrypted and decrypted using a random algorithm (generated per protected binary / layer) so this also finds the decryption routine and dumps it for use by x86virt-disasm. This is the script you run from x64dbg to devirtualize the application. All other components are invoked automatically by this component. This is the only component you need to directly invoke.
