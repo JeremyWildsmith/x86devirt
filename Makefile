@@ -1,7 +1,7 @@
 CC=g++
 CFLAGS=-m32
-OBJDIR=obj
-BINDIR=bin
+OBJDIR=.
+BINDIR=.
 
 all: $(BINDIR)/x86virt-disasm
 

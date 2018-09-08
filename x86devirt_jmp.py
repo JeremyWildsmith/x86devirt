@@ -102,7 +102,7 @@ possibleJmps = [
 controlFlowBits = 0x8C5
 
 
-def getStatesMap(proj):
+def getJmpStatesMap(proj):
     statesMap = {}
 
     state = proj.factory.blank_state(addr=0x0)
@@ -136,49 +136,48 @@ def getStatesMap(proj):
 
     return statesMap
 
-proj = angr.Project("jmpDecoder.bin", main_opts={'backend': 'blob', 'custom_arch': 'i386'}, auto_load_libs=False)
 
-#result = simgr.step()
-#resultState = result.active[0]
-#resultState.solver.eval(resultState.regs.eip)
+def decodeJumps(inputFile):
+    proj = angr.Project(inputFile, main_opts={'backend': 'blob', 'custom_arch': 'i386'}, auto_load_libs=False)
 
+    stateMap = getJmpStatesMap(proj)
+    jumpMappings = {}
+    for key, val in stateMap.iteritems():
 
+        for jmp in possibleJmps:
+            satisfiedMustsRemaining = len(jmp["must"])
+            satisfiedNotsRemaining = len(jmp["not"])
 
-stateMap = getStatesMap(proj)
-jumpMappings = {}
-for key, val in stateMap.iteritems():
+            for state in val["must"]:
+                for con in jmp["must"]:
+                    if (state.solver.satisfiable(
+                            extra_constraints=[state.regs.eax & controlFlowBits == con & controlFlowBits])):
+                        satisfiedMustsRemaining -= 1;
 
-    for jmp in possibleJmps:
-        satisfiedMustsRemaining = len(jmp["must"])
-        satisfiedNotsRemaining = len(jmp["not"])
+            for state in val["not"]:
+                for con in jmp["not"]:
+                    if (state.solver.satisfiable(
+                            extra_constraints=[state.regs.eax & controlFlowBits == con & controlFlowBits])):
+                        satisfiedNotsRemaining -= 1;
 
-        for state in val["must"]:
-            for con in jmp["must"]:
-                if (state.solver.satisfiable(
-                        extra_constraints=[state.regs.eax & controlFlowBits == con & controlFlowBits])):
-                    satisfiedMustsRemaining -= 1;
+            if(satisfiedMustsRemaining <= 0 and satisfiedNotsRemaining <= 0):
+                if(not jumpMappings.has_key(key)):
+                    jumpMappings[key] = []
 
-        for state in val["not"]:
-            for con in jmp["not"]:
-                if (state.solver.satisfiable(
-                        extra_constraints=[state.regs.eax & controlFlowBits == con & controlFlowBits])):
-                    satisfiedNotsRemaining -= 1;
+                jumpMappings[key].append(jmp)
+    
+    finalMap = {}
+    for key, val in jumpMappings.iteritems():
+        maxPriority = 0;
+        jmpName = "NOE FOUND"
+        for j in val:
+            if(j["priority"] > maxPriority):
+                maxPriority = j["priority"]
+                jmpName = j["name"]
+        finalMap[jmpName] = key
+        print("Mapped " + str(key) + " to " + jmpName)
 
-        if(satisfiedMustsRemaining <= 0 and satisfiedNotsRemaining <= 0):
-            if(not jumpMappings.has_key(key)):
-                jumpMappings[key] = []
-
-            jumpMappings[key].append(jmp)
-            print(str(key) + " to jump " + jmp["name"] + " Priority " + str(jmp["priority"]))
-
-print("============")
-for key, val in jumpMappings.iteritems():
-    maxPriority = 0;
-    jmpName = "NOE FOUND"
-    for j in val:
-        if(j["priority"] > maxPriority):
-            maxPriority = j["priority"]
-            jmpName = j["name"]
-
-    print("Mapped " + str(key) + " to " + jmpName)
+    proj.terminate_execution()
+    return finalMap
+    
 

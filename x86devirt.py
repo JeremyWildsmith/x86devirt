@@ -6,7 +6,11 @@ import yara
 import distorm3
 from time import sleep
 import struct
-import angr
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from x86devirt_jmp import decodeJumps
 
 nasmTool = "nasm.exe"
 
@@ -24,7 +28,7 @@ def findLabelLocation(labels, searchLabel):
 
     return None
 
-def devirt(source, destination, size, maxDestSize, mappingsLocation, decryptSubroutineDumpLocation):
+def devirt(source, destination, size, maxDestSize, mappingsLocation, decryptSubroutineDumpLocation, jmpMappings):
     global maxInstructions
 
     outAsmName = "out_" + hex(destination) + ".asm";
@@ -35,9 +39,10 @@ def devirt(source, destination, size, maxDestSize, mappingsLocation, decryptSubr
     file = open("buffer.bin", "wb")
     file.write(sourceBuffer)
     file.close()
-    
-    x64dbg._plugin_logputs("Invoking disassembler: x86virt-disasm.exe buffer.bin " + hex(destination) + " " + hex(destination) + " " + mappingsLocation + " " + decryptSubroutineDumpLocation)
-    disassembledOutput = subprocess.check_output(["x86virt-disasm.exe", "buffer.bin", hex(destination), hex(destination), mappingsLocation, decryptSubroutineDumpLocation])
+
+    CREATE_NO_WINDOW = 0x08000000
+    x64dbg._plugin_logputs("Invoking disassembler: x86virt-disasm.exe buffer.bin " + hex(destination) + " " + hex(destination) + " " + mappingsLocation + " " + decryptSubroutineDumpLocation + " " + jmpMappings)
+    disassembledOutput = subprocess.check_output(["x86virt-disasm.exe", "buffer.bin", hex(destination), hex(destination), mappingsLocation, decryptSubroutineDumpLocation, jmpMappings], creationflags=CREATE_NO_WINDOW)
 
     #Write disassembly to file
     file = open(outAsmName, "wb")
@@ -45,7 +50,7 @@ def devirt(source, destination, size, maxDestSize, mappingsLocation, decryptSubr
     file.close()
 
     x64dbg._plugin_logputs("Invoking nasm: nasm.exe -f bin " + outAsmName)
-    disassembledOutput = subprocess.check_output(["nasm.exe", "-f", "bin", outAsmName])
+    disassembledOutput = subprocess.check_output(["nasm.exe", "-f", "bin", outAsmName], creationflags=CREATE_NO_WINDOW)
 	
     #Reading assembled bytes into buffer...
     file = open(os.path.splitext(outAsmName)[0], "rb")
@@ -175,6 +180,8 @@ def getInstructionMappings(vmStub, instructionRules):
 
     startOfDispatch = Register.EIP
     mappings = bytearray(0xFF + 1)
+    handlerMappings = {}
+    
     for i in range(0, 0xFF + 1):
         Register.EAX = baseOfMap
         Register.EDX = i
@@ -189,7 +196,8 @@ def getInstructionMappings(vmStub, instructionRules):
         mappedInstrNo = determineInstructionFromHandler(handlerStub, instructionRules)
 
         if(mappedInstrNo is not None):
-            x64dbg._plugin_logputs("Matched opcode " + hex(i) + " to handler at :" + hex(handlerStub) + " for handler of instr no " + str(mappedInstrNo))
+            x64dbg._plugin_logputs("Matched opcode " + hex(i) + " to handler at " + hex(handlerStub) + " for handler of instr no " + str(mappedInstrNo))
+            handlerMappings[mappedInstrNo] = handlerStub
         else:
             mappedInstrNo = i
     
@@ -200,7 +208,7 @@ def getInstructionMappings(vmStub, instructionRules):
     Register.EIP = oldEip
     Register.EDX = oldEdx
 
-    return mappings;
+    return {"opcodeMappings": mappings, "handlerMappings": handlerMappings};
 
 def getDecryptSubroutine(vmStub):
     addressCallDecrypt = vmStub + 0x44
@@ -234,9 +242,27 @@ def dumpInstructionMap(vmStub, instructionRules):
         return None
     
     mappingsFile = open(outFile, "wb")
-    mappingsFile.write(mappings)
+    mappingsFile.write(mappings["opcodeMappings"])
     mappingsFile.close()
-    return outFile
+    
+    return {"file": outFile, "handlerMappings": mappings["handlerMappings"]}
+
+def getJumpDecoder(handlerMappings):
+    if(not handlerMappings.has_key(7)):
+        x64dbg._plugin_logputs("Cannot get jump decoder, i7 is missing...")
+        return None
+
+    handler = handlerMappings[7]
+    handler += 0x9 #This is where the decoder is called...
+    
+    instrBuffer = Read(handler, 10)
+    decomposedInstructions = distorm3.Decompose(handler, instrBuffer)
+    decryptCall = decomposedInstructions[0]
+    if (decryptCall.flowControl == "FC_CALL"):
+        return decryptCall.operands[0].value;
+    
+    x64dbg._plugin_logputs("Failed to find jump decoder, could not find call to jump decoder in i7 handler")
+    return None
     
 def devirtVmStub(vmStub, yaraRules):
 
@@ -249,6 +275,14 @@ def devirtVmStub(vmStub, yaraRules):
 
     x64dbg._plugin_logputs("Extracting instruction mappings...")
     instructionMappings = dumpInstructionMap(vmStub, yaraRules["instructions"])
+    opcodeMappings = instructionMappings["file"]
+
+    jumpDecoder = getJumpDecoder(instructionMappings["handlerMappings"])
+
+    if(jumpDecoder is None):
+        return False
+    
+    jumpMappings = dumpJumpMap(jumpDecoder)
 
     x64dbg._plugin_logputs("VM Stub located at: " + hex(vmStub))
     x64dbg._plugin_logputs("Searching for cross references to VM Stub...")
@@ -268,20 +302,22 @@ def devirtVmStub(vmStub, yaraRules):
         x64dbg._plugin_logputs("Found encrypted function: " + hex(func["bytecode"]))
         encryptedFunctions.append(func)
 
+    x64dbg._plugin_logputs("Starting re-encoding of bytecode into x86, this may take some time...")
+
     for ef in encryptedFunctions:
         sectionAddress = ef["reference"]["section"].addr
         sectionSize = ef["reference"]["section"].size
         dumpSize = sectionSize - (ef["bytecode"] - sectionAddress)
         x64dbg._plugin_logputs("Decrypting function from " + hex(ef["bytecode"]) + " to: " + hex(ef["original"]) + ", using dump size: " + str(dumpSize))
 
-        assembleSize = devirt(ef["bytecode"], ef["original"], dumpSize, ef["size"], instructionMappings, decryptSubroutine)
+        assembleSize = devirt(ef["bytecode"], ef["original"], dumpSize, ef["size"], opcodeMappings, decryptSubroutine, jumpMappings)
         if(assembleSize < 0):
             x64dbg._plugin_logputs("Stopping unpacking, assemble operation failed.")
             return False
     
     return True
 
-def tryDevirtAll(yaraRules):
+def tryDevirtAll(yaraRules, ignore):
     
     x64dbg._plugin_logputs("Scanning for the location of the VM Stub...")
     vmStubs = findVmStubs(yaraRules["vmStub"])
@@ -290,29 +326,64 @@ def tryDevirtAll(yaraRules):
         x64dbg._plugin_logputs("Failed to locate any VM Stubs. Exiting...")
         return False;
 
-    if(len(vmStubs) > 1):
-        return False;
-    
+    devirtualized = 0
     for s in vmStubs:
+        if(s in ignore):
+            x64dbg._plugin_logputs("Skipping vm stub " + hex(s) + " . Already been devirtualized.")
+            continue
+        
         x64dbg._plugin_logputs("Attempting to devirt stub: " + hex(s))
         if(devirtVmStub(s, yaraRules) == False):
             x64dbg._plugin_logputs("Stopping unpacking, failed to devirt stub: " + hex(s))
             return False
 
+        devirtualized += 1
+        ignore.append(s)
+
+    if(devirtualized > 0):
+        x64dbg._plugin_logputs("Devirtualized VM, now checking for additional layers.")
+        return tryDevirtAll(yaraRules, ignore)
+    else:
+        x64dbg._plugin_logputs("No more VM layers to devirtualize. Completed")
+        
+    
     return True;
 
-def extractJumpMap(jumpDecoder):
-    jumpDecCalc = jumpDecoder + 0xA
-    instructions = Read(jumpDecCalc, 0x100)
-
-def main():
-    #Message("This python script is an x86virt devirtualizer written by Jeremy Wildsmith. It has been published on the github page https://github.com/JeremyWildsmith/x86devirt")    
-    #result = MessageYesNo("This script should be run when EIP Matches the entrypoint (not OEP, just the correct entrypoint). Is EIP at OP? Press No to cancel.")
-
-    #if(result == False):
-    #    return False
+def dumpJumpMap(jumpDecoder):
+    outDecoderFile = "jmpDecoder_" + hex(jumpDecoder) + ".bin"
+    outMapFile = "jmpMap.bin"
     
-    #Message("Now attempting to locate all present VM stubs and decrypt / devirtualize respective functions.")
+    jumpDecCalc = jumpDecoder + 0x4
+    instructions = Read(jumpDecCalc, 0x100)
+    x64dbg._plugin_logputs("Dump jump decoder for angr simulation...")
+
+    file = open(outDecoderFile, "wb")
+    file.write(instructions);
+    file.close()
+
+    jmpMap = decodeJumps(outDecoderFile)
+
+    #the order expected by x86devirt-disassembler
+    mappings = bytearray(16)
+    jmpOrder = ["jge", "jl", "jle", "jz", "jo", "jbe", "jnz", "jno", "js", "jp", "jb", "jg", "ja", "jnp", "jns", "jnb"]
+
+    for key, val in jmpMap.iteritems():
+        mappings[val] = jmpOrder.index(key);
+
+    file = open(outMapFile, "wb")
+    file.write(mappings)
+    file.close()
+
+    return outMapFile
+    
+def main():
+    Message("This python script is an x86virt devirtualizer written by Jeremy Wildsmith. It has been published on the github page https://github.com/JeremyWildsmith/x86devirt")    
+    result = MessageYesNo("This script should be run when EIP Matches the entrypoint (not OEP, just the correct entrypoint). Is EIP at OP? Press No to cancel.")
+
+    if(result == False):
+        return False
+    
+    Message("Now attempting to locate all present VM stubs and decrypt / devirtualize respective functions.")
 
     os.chdir(os.path.dirname(os.path.realpath(__file__)))
     yaraRules = {
@@ -321,10 +392,8 @@ def main():
         "vmRef": yara.compile(filepath='vmRef.yara')
     }
 
-    tryDevirtAll(yaraRules)
+    tryDevirtAll(yaraRules, [])
         
     Message("Application has been devirtualized, refer to log for more details...")
 
-
-#main()
-extractJumpMap(0x411000)
+main()

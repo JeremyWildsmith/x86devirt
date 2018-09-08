@@ -185,7 +185,7 @@ DecodedRegister_t decodeVmRegisterReference(const uint8_t registerEncoded) {
     return (DecodedRegister_t)reference;
 }
 
-vector<DecodedVmInstruction> disassembleVmInstruction(const uint8_t* instrBuffer, uint32_t instrLength, uint32_t vmRelativeIp, const uint32_t baseAddress, const uint32_t dumpBase) {
+vector<DecodedVmInstruction> disassembleVmInstruction(const uint8_t* instrBuffer, uint32_t instrLength, uint32_t vmRelativeIp, const uint32_t baseAddress, const uint32_t dumpBase, uint8_t* jmpMap) {
     vector<DecodedVmInstruction> resultSet;
 
     DecodedVmInstruction baseInstr;
@@ -327,7 +327,7 @@ vector<DecodedVmInstruction> disassembleVmInstruction(const uint8_t* instrBuffer
         }
         case 7:
         {
-            uint8_t operand1 = instrBuffer[1];
+            uint8_t operand1 = jmpMap[instrBuffer[1]];
             uint32_t operand2 = *((uint32_t*)(&instrBuffer[2]));
 
             sprintf(baseInstr.disassembled, "%s lbl_0x%08X", getJumpName(decodeVmJump(operand1)), vmRelativeIp + operand2 + dumpBase);
@@ -428,7 +428,7 @@ vector<DecodedVmInstruction> disassembleVmInstruction(const uint8_t* instrBuffer
 }
 
 unsigned int decodeVmInstruction(vector<DecodedVmInstruction>& decodedBuffer, const uint8_t* vmMemory, const long vmMemorySize, uint32_t vmRelativeIp, 
-                            const uint32_t baseAddress, const uint32_t dumpBase, uint8_t* instructionMappings, decryptInstruction_t func_decryptInstruction) {
+                            const uint32_t baseAddress, const uint32_t dumpBase, uint8_t* instructionMappings, decryptInstruction_t func_decryptInstruction, uint8_t* jmpMap) {
 
     uint32_t instrLength = getInstructionLength(vmMemory + vmRelativeIp);
     uint8_t instrBuffer[MAX_INSTRUCTION_LENGTH];
@@ -452,7 +452,7 @@ unsigned int decodeVmInstruction(vector<DecodedVmInstruction>& decodedBuffer, co
         
         //Map instructions correctly
         instrBuffer[2] = instructionMappings[instrBuffer[2]];
-        decodedBuffer = disassembleVmInstruction(instrBuffer + 2, instrLength - 2, vmRelativeIp, baseAddress, dumpBase);
+        decodedBuffer = disassembleVmInstruction(instrBuffer + 2, instrLength - 2, vmRelativeIp, baseAddress, dumpBase, jmpMap);
     } else {
         decodedBuffer = disassemble86Instruction(instrBuffer, instrLength, dumpBase + vmRelativeIp);
     }
@@ -507,7 +507,7 @@ bool isInRegions(const std::vector<DisassembledRegion>& regions, uint32_t ip, ui
     return false;
 }
 
-vector<DisassembledRegion> getDisassembleRegions(const uint8_t* vmMemory, const unsigned int vmMemorySize, const uint32_t initialIp, uint32_t dumpBase, uint8_t* instructionMappings, decryptInstruction_t func_decryptInstruction) {
+vector<DisassembledRegion> getDisassembleRegions(const uint8_t* vmMemory, const unsigned int vmMemorySize, const uint32_t initialIp, uint32_t dumpBase, uint8_t* instructionMappings, decryptInstruction_t func_decryptInstruction, uint8_t* jmpMap) {
     vector<DisassembledRegion> disassembledStubs;
     queue<uint32_t> stubsToDisassemble;
     stubsToDisassemble.push(initialIp);
@@ -527,7 +527,7 @@ vector<DisassembledRegion> getDisassembleRegions(const uint8_t* vmMemory, const 
 
             vector<DecodedVmInstruction> instrSet;
    
-            vmRelativeIp += decodeVmInstruction(instrSet, vmMemory, vmMemorySize, vmRelativeIp, 0, dumpBase, instructionMappings, func_decryptInstruction);
+            vmRelativeIp += decodeVmInstruction(instrSet, vmMemory, vmMemorySize, vmRelativeIp, 0, dumpBase, instructionMappings, func_decryptInstruction, jmpMap);
     
             for(auto& instr : instrSet) {
                 if(instr.type == DecodedInstructionType_t::INSTR_UNKNOWN) {
@@ -678,9 +678,9 @@ bool sortRegionsAscending (DisassembledRegion& a, DisassembledRegion& b) {
     return a.min < b.min;
 }
 bool disassembleStub(const uint8_t* vmMemory, const unsigned int vmMemorySize, const uint32_t baseAddress, const uint32_t dumpBase, 
-                        const uint32_t initialIp, uint8_t* instructionMappings, decryptInstruction_t func_decryptInstruction) {
+                        const uint32_t initialIp, uint8_t* instructionMappings, decryptInstruction_t func_decryptInstruction, uint8_t* jmpMap) {
     
-    vector<DisassembledRegion> stubs = getDisassembleRegions(vmMemory, vmMemorySize, initialIp, dumpBase, instructionMappings, func_decryptInstruction);
+    vector<DisassembledRegion> stubs = getDisassembleRegions(vmMemory, vmMemorySize, initialIp, dumpBase, instructionMappings, func_decryptInstruction, jmpMap);
     
     //Needs to be sorted, otherwise (due to jump sizes) may not fit into original location
     //Sorting should match it with the way it was implemented.
@@ -703,7 +703,7 @@ bool disassembleStub(const uint8_t* vmMemory, const unsigned int vmMemorySize, c
 
             vector<DecodedVmInstruction> instrSet;
    
-            vmRelativeIp += decodeVmInstruction(instrSet, vmMemory, vmMemorySize, vmRelativeIp, baseAddress, dumpBase, instructionMappings, func_decryptInstruction);
+            vmRelativeIp += decodeVmInstruction(instrSet, vmMemory, vmMemorySize, vmRelativeIp, baseAddress, dumpBase, instructionMappings, func_decryptInstruction, jmpMap);
 
             for(auto& instr : instrSet) {
                 if(instr.type == DecodedInstructionType_t::INSTR_UNKNOWN)
@@ -732,8 +732,8 @@ bool disassembleStub(const uint8_t* vmMemory, const unsigned int vmMemorySize, c
 int main(int argc, char** args) {
     const uint32_t baseAddress = 0x400000;
 
-    if(argc < 6) {
-        printf("Arguments: <vm code dump> <dump base> <initial ip in hex> <inst map dump> <decryptRoutineDump\n");
+    if(argc < 7) {
+        printf("Arguments: <vm code dump> <dump base> <initial ip in hex> <inst map dump> <decryptRoutineDump> <jmpMap>\n");
         printf("Incorrect number of arguments...\n");
         return -1;
     }
@@ -749,6 +749,8 @@ int main(int argc, char** args) {
     uint8_t* instrMappings = readVmMemory(args[4], &mappingsSize);
     
     uint8_t* decryptRoutine = readVmMemory(args[5]);
+
+    uint8_t* jmpMap = readVmMemory(args[6]);
 
     if(!decryptRoutine) {
         printf("Unable to load decrypt routine...");
@@ -780,7 +782,7 @@ int main(int argc, char** args) {
     printf("[BITS 32]\n");
 
     try {
-        if(!disassembleStub(vmMemory, vmMemorySize, baseAddress, dumpBase, vmInitialIp, instrMappings, (decryptInstruction_t)decryptRoutine))
+        if(!disassembleStub(vmMemory, vmMemorySize, baseAddress, dumpBase, vmInitialIp, instrMappings, (decryptInstruction_t)decryptRoutine, jmpMap))
             return -1;
     } catch (runtime_error& e) {
         printf("Error occured: %s", e.what());
