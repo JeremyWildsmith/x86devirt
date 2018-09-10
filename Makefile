@@ -1,12 +1,10 @@
 CC=g++
 CFLAGS=-m32
-OBJDIR=.
-BINDIR=.
 
-all: $(BINDIR)/x86virt-disasm
+all: x86virt-disasm
 
-$(OBJDIR)/%.o: %.cpp $(DEPS)
+%.o: %.cpp %.h
 	$(CC) $(CFLAGS) -ggdb -c $< -o $@
 
-$(BINDIR)/x86virt-disasm: $(OBJDIR)/main.o
-	$(CC) -ggdb -m32 -o $(BINDIR)/x86virt-disasm $(OBJDIR)/main.o -ludis86
+x86virt-disasm: main.o VmInfo.o VmReg.o VmJmp.o
+	$(CC) -ggdb -m32 -o x86virt-disasm main.o VmInfo.o VmReg.o VmJmp.o -ludis86 
