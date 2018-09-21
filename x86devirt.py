@@ -12,14 +12,6 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 from x86devirt_jmp import decodeJumps
 
-nasmTool = "nasm.exe"
-
-bytecodeSignatures = [
-    {
-        "id": 1,
-        "signature": "rule R {strings: $str = { } condition: $str}"
-    }
-]
 
 def findLabelLocation(labels, searchLabel):
     for l in labels:

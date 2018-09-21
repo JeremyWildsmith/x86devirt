@@ -288,8 +288,7 @@ vector<DecodedVmInstruction> disassembleVmInstruction(const uint8_t* instrBuffer
         }
         case 16:
         {
-            const uint32_t operand = *((uint32_t*)(&instrBuffer[1]));
-            sprintf(baseInstr.disassembled, "STOP", vmrSub, operand);
+            sprintf(baseInstr.disassembled, "STOP");
             baseInstr.type = DecodedInstructionType_t::INSTR_STOP;
             resultSet.push_back(baseInstr);
             break;
