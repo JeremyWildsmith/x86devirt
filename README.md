@@ -1,5 +1,7 @@
 # x86devirt
 
+Write-Up URL: http://jeremywildsmith.com/?blog%2Fx86devirt
+
 This is a project that aims to devirtualize & disassemble applications that
 have been virtualized using x86virt.
 
@@ -30,14 +32,7 @@ The devirtualizer on this repository was developed independently by myself (Jere
 
 Please e-mail any feedback or questions to jeremywildsmith (th!s i$ an at symb0l) Y(eah)(w)hoo d0t ca
 
-I haven't had time to document this thoroughly and there is a lot going on inside the application, but below is a basic overview:
-
-There are basically three main components in the dist:
-1. x86devirt.py - The job of this script is to find the VM Interpreter, the virtualized subroutines, the VM Instruction Handlers and to get the jmp  mappings using x86devirt_jmp.py. It also finds what opcodes map to what handlers (Since the opcode mappings and jmp mappings are randomized for every binary protected [and every vm layer]). The instructions are also encrypted and decrypted using a random algorithm (generated per protected binary / layer) so this also finds the decryption routine and dumps it for use by x86virt-disasm. This is the script you run from x64dbg to devirtualize the application. All other components are invoked automatically by this component. This is the only component you need to directly invoke.
-
-2. x64dbgpy_jmp.py - This basically takes a blob (or dump) of the jmp decoder in the protected binary's vm and runs an angr simulation to map the jumps to something x86virt-disasm can understand. This needs to be done because the jmp decoders are randomized per binary / vm layer
-
-3. x86virt-disasm.exe This takes the dump to the routine that is to be devirtualized, the decryption routine ripped from the protected binary, the instruction mappings and the jmp mappings and produces a disassembled x86 form of the subroutine (in a format compliant with NASM). This is printed to STDOUT, the x86devirt.py script redirects that stdout to a file and feeds it into nasm before writing the nasm output (assembled x86 code) back into memory where the routine in its devirtualized form is assembled and fits in.
+The project has been written up with a details explanation on how it works at the following URL: http://jeremywildsmith.com/?blog%2Fx86devirt
 
 # License
 This project and all of its' source files are licensed under the MIT license. NASM is licensed under a seperate license, mentioned under NASM-LICENSE in the distribution.
