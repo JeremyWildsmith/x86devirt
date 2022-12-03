@@ -1,7 +1,4 @@
 # x86devirt
-
-Write-Up URL: http://jeremywildsmith.com/?blog%2Fx86devirt
-
 This is a project that aims to devirtualize & disassemble applications that
 have been virtualized using x86virt.
 
@@ -29,10 +26,6 @@ The devirtualizer on this repository was developed independently by myself (Jere
 - nasm assembler is used to assemble the x86 output from the x86virt-disassembler utility
 
 # Documentation / Feedback
-
-Please e-mail any feedback or questions to jeremywildsmith (th!s i$ an at symb0l) Y(eah)(w)hoo d0t ca
-
-The project has been written up with a details explanation on how it works at the following URL: http://jeremywildsmith.com/?blog%2Fx86devirt
 
 # License
 This project and all of its' source files are licensed under the MIT license. NASM is licensed under a seperate license, mentioned under NASM-LICENSE in the distribution.
